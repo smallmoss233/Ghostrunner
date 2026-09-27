@@ -11,9 +11,13 @@ public class Ghostrunner implements ModInitializer {
     public static final String MOD_ID = "ghostrunner";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    /** 客户端按空格 → 服务端跳出跑墙 */
+    /** 客户端 → 服务端：请求跳出跑墙 */
     public static final Identifier JUMP_OFF_WALL_PACKET =
             new Identifier(MOD_ID, "jump_off_wall");
+
+    /** 服务端 → 客户端：同步跑墙状态（用于相机倾斜） */
+    public static final Identifier WALL_RUN_STATE_PACKET =
+            new Identifier(MOD_ID, "wall_run_state");
 
     @Override
     public void onInitialize() {
@@ -21,7 +25,6 @@ public class Ghostrunner implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(JUMP_OFF_WALL_PACKET,
                 (server, player, handler, buf, responseSender) -> {
-                    // 回主线程处理，避免网络线程操作世界
                     server.execute(() -> {
                         if (player instanceof WallRunState state
                                 && state.ghostrunner$isWallRunning()) {
