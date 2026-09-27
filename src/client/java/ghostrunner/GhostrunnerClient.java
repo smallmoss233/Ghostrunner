@@ -1,9 +1,11 @@
 package ghostrunner;
 
+import ghostrunner.api.GhostrunnerState;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.math.Direction;
 
 public class GhostrunnerClient implements ClientModInitializer {
@@ -11,6 +13,7 @@ public class GhostrunnerClient implements ClientModInitializer {
     // ============ 客户端跑墙状态（由服务端同步） ============
     public static boolean wallRunning = false;
     public static Direction wallSide = null;
+    private static boolean prevSprintPressed = false;
 
     // ============ 相机倾斜 ============
     /** 目标最大倾斜角（弧度）。约 15 度 */
@@ -57,7 +60,31 @@ public class GhostrunnerClient implements ClientModInitializer {
 
             // 平滑插值
             currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
+
+            // 冲刺键检测（上升沿）
+            boolean sprintPressed = client.options.sprintKey.isPressed();
+            if (sprintPressed && !prevSprintPressed) {
+                PacketByteBuf buf = PacketByteBufs.create();
+                buf.writeBoolean(client.options.forwardKey.isPressed());
+                buf.writeBoolean(client.options.backKey.isPressed());
+                buf.writeBoolean(client.options.leftKey.isPressed());
+                buf.writeBoolean(client.options.rightKey.isPressed());
+                ClientPlayNetworking.send(Ghostrunner.DASH_PACKET, buf);
+            }
+            prevSprintPressed = sprintPressed;
         });
+
+        // ---- 接收"幽灵行者"标记 ----
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.ASCENDED_STATE_PACKET,
+                (client, handler, buf, sender) -> {
+                    boolean ascended = buf.readBoolean();
+                    client.execute(() -> {
+                        if (client.player instanceof GhostrunnerState.GhostrunnerStateAccessor a) {
+                            a.ghostrunner$setAscended(ascended);
+                        }
+                    });
+                });
+
     }
 
     /**

@@ -1,11 +1,13 @@
 package ghostrunner.mixin;
 
 import ghostrunner.Ghostrunner;
+import ghostrunner.api.GhostrunnerState;
 import ghostrunner.api.WallRunState;
 import ghostrunner.handler.WallRunHandler;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.Direction;
@@ -17,8 +19,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(PlayerEntity.class)
-public abstract class PlayerEntityMixin implements WallRunState {
+public abstract class PlayerEntityMixin
+        implements WallRunState, GhostrunnerState.GhostrunnerStateAccessor {
 
+    // ============ 跑墙状态 ============
     @Unique private boolean ghostrunner$wallRunning = false;
     @Unique private Direction ghostrunner$wallSide = null;
     @Unique private Vec3d    ghostrunner$lockedDirection = Vec3d.ZERO;
@@ -26,11 +30,16 @@ public abstract class PlayerEntityMixin implements WallRunState {
     @Unique private int      ghostrunner$wallRunTicks = 0;
     @Unique private int      ghostrunner$airborneTicks = 0;
 
-    // ★ 用于检测状态变化，避免每 tick 发包
-    @Unique private boolean  ghostrunner$lastSentRunning = false;
+    // ============ 网络同步缓存 ============
+    @Unique private boolean   ghostrunner$lastSentRunning = false;
     @Unique private Direction ghostrunner$lastSentSide = null;
 
-    // ============ WallRunState ============
+    // ============ 幽灵行者标记 ============
+    @Unique private boolean ghostrunner$ascended = false;
+
+    // ================================================================
+    //                       WallRunState
+    // ================================================================
 
     @Override
     public boolean ghostrunner$isWallRunning() {
@@ -45,15 +54,46 @@ public abstract class PlayerEntityMixin implements WallRunState {
         PlayerEntity self = (PlayerEntity) (Object) this;
         WallRunHandler.jumpOffWall(self, ghostrunner$wallSide);
         ghostrunner$exitWallRun();
-        ghostrunner$syncState();
     }
 
-    // ============ Tick ============
+    // ================================================================
+    //                   GhostrunnerStateAccessor
+    // ================================================================
+
+    @Override
+    public boolean ghostrunner$isAscended() {
+        return ghostrunner$ascended;
+    }
+
+    @Override
+    public void ghostrunner$setAscended(boolean value) {
+        ghostrunner$ascended = value;
+
+        PlayerEntity self = (PlayerEntity) (Object) this;
+        if (self instanceof ServerPlayerEntity sp) {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeBoolean(value);
+            ServerPlayNetworking.send(sp, Ghostrunner.ASCENDED_STATE_PACKET, buf);
+        }
+    }
+
+    // ================================================================
+    //                           Tick
+    // ================================================================
 
     @Inject(method = "tick", at = @At("HEAD"))
     private void ghostrunner$onTick(CallbackInfo ci) {
         PlayerEntity self = (PlayerEntity) (Object) this;
         if (self.getWorld().isClient()) return;
+
+        if (!GhostrunnerState.isGhostrunner(self)) {
+            // 不是幽灵行者时，如果之前是跑墙状态，也要同步关闭
+            if (ghostrunner$wallRunning) {
+                ghostrunner$exitWallRun();
+                ghostrunner$syncState();
+            }
+            return;
+        }
 
         if (ghostrunner$cooldown > 0) ghostrunner$cooldown--;
 
@@ -69,9 +109,28 @@ public abstract class PlayerEntityMixin implements WallRunState {
             ghostrunner$tryEnterWallRun(self);
         }
 
-        // 每 tick 末尾同步状态（只在变化时真发包）
         ghostrunner$syncState();
     }
+
+    // ================================================================
+    //                       NBT 持久化
+    // ================================================================
+
+    @Inject(method = "writeCustomDataToNbt", at = @At("TAIL"))
+    private void ghostrunner$writeNbt(NbtCompound nbt, CallbackInfo ci) {
+        nbt.putBoolean("GhostrunnerAscended", ghostrunner$ascended);
+    }
+
+    @Inject(method = "readCustomDataFromNbt", at = @At("TAIL"))
+    private void ghostrunner$readNbt(NbtCompound nbt, CallbackInfo ci) {
+        if (nbt.contains("GhostrunnerAscended")) {
+            ghostrunner$ascended = nbt.getBoolean("GhostrunnerAscended");
+        }
+    }
+
+    // ================================================================
+    //                       跑墙内部
+    // ================================================================
 
     @Unique
     private void ghostrunner$tryEnterWallRun(PlayerEntity self) {
@@ -81,7 +140,6 @@ public abstract class PlayerEntityMixin implements WallRunState {
 
         Direction wall = WallRunHandler.findWall(self);
         if (wall == null) return;
-
         if (!WallRunHandler.isMovingTowardWall(self, wall)) return;
 
         Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
@@ -125,14 +183,16 @@ public abstract class PlayerEntityMixin implements WallRunState {
         ghostrunner$cooldown = WallRunHandler.REENTRY_COOLDOWN;
     }
 
-    // ============ 状态同步 ============
+    // ================================================================
+    //                       网络同步
+    // ================================================================
 
     @Unique
     private void ghostrunner$syncState() {
         PlayerEntity self = (PlayerEntity) (Object) this;
         if (!(self instanceof ServerPlayerEntity sp)) return;
 
-        // 状态没变就不发包
+        // 状态没变不发包
         if (ghostrunner$wallRunning == ghostrunner$lastSentRunning
                 && ghostrunner$wallSide == ghostrunner$lastSentSide) {
             return;

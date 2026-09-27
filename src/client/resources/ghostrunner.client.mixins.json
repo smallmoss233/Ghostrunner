@@ -3,7 +3,8 @@
 	"package": "ghostrunner.mixin.client",
 	"compatibilityLevel": "JAVA_17",
 	"client": [
-      "GameRendererMixin"
+      "GameRendererMixin",
+      "InGameHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

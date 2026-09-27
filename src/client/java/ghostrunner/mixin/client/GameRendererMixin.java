@@ -18,8 +18,7 @@ public abstract class GameRendererMixin {
                     value = "INVOKE",
                     target = "Lcom/mojang/blaze3d/systems/RenderSystem;setInverseViewRotationMatrix(Lorg/joml/Matrix3f;)V",
                     shift = At.Shift.BEFORE
-            ),
-            require = 0
+            )
     )
     private void ghostrunner$addWallRunRoll(CallbackInfo ci,
                                             @Local(argsOnly = true) MatrixStack matrices) {
