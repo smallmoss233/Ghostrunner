@@ -24,7 +24,7 @@ public class ShiftTooltipHelper {
             // 使用 TooltipHelper 将长文本按 * 拆分成多行
             TooltipHelper.addWrappedTooltip(tooltip, longText);
         } else {
-            tooltip.add(Text.translatable("tooltip.doctor_m.hold_shift").formatted(Formatting.GRAY, Formatting.ITALIC));
+            tooltip.add(Text.translatable("tooltip.ghostrunner.hold_shift").formatted(Formatting.GRAY, Formatting.ITALIC));
         }
     }
 }

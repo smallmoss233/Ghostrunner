@@ -8,6 +8,10 @@
   "gui.ghostrunner.death_title": "致命失误！",
   "gui.ghostrunner.respawn_hint": "按 %s 复活",
 
-  "message.ghostrunner.ascended": "§b凡人躯壳已然破碎。你成为了新的存在...幽灵行者。",
-  "message.ghostrunner.already_ascended": "§e你已不不再是“你”，已不再能使用这件物品。"
+  "message.ghostrunner.ascended": "§b凡人躯壳已然破碎，灵魂重铸为锋刃。欢迎降临，幽灵行者。",
+  "message.ghostrunner.already_ascended": "§e你已不再是“你”，无需也无法再次进行改造。",
+
+  "tooltip.ghostrunner.hold_shift": "§8按住 §7Shift §8查看详情...",
+  "item.ghostrunner.ghostrunner_tag.tip": "§5『 幽灵行者 』*§7剥离你的凡人身躯，将意识重铸为锋刃。*§7右键使用后，将你改造为幽灵行者。",
+  "item.ghostrunner.ghostrunner_tag.detail": "§c警告：改造过程会伴随剧烈的生理冲击（将生命值降低至1点）。*§c请在安全环境下使用，避免失明期间被怪物偷袭。*§8—— “不要抗拒，这只是一次系统升级。”"
 }
