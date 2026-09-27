@@ -3,7 +3,8 @@
 	"package": "ghostrunner.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"mixins": [
-      "PlayerEntityMixin"
+      "PlayerEntityMixin",
+      "LivingEntityDamageMixin"
     ],
 	"injectors": {
 		"defaultRequire": 1

@@ -8,6 +8,7 @@ import ghostrunner.handler.DashHandler;
 import ghostrunner.item.GRItems;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
@@ -87,6 +88,17 @@ public class Ghostrunner implements ModInitializer {
                 PacketByteBuf buf = PacketByteBufs.create();
                 buf.writeBoolean(a.ghostrunner$isAscended());
                 ServerPlayNetworking.send(player, ASCENDED_STATE_PACKET, buf);
+            }
+        });
+
+        ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
+            if (oldPlayer instanceof GhostrunnerState.GhostrunnerStateAccessor oldA
+                    && newPlayer instanceof GhostrunnerState.GhostrunnerStateAccessor newA) {
+                newA.ghostrunner$setAscended(oldA.ghostrunner$isAscended());
+            }
+
+            // 强制重置跑墙状态（不复制旧的）
+            if (newPlayer instanceof WallRunState newWall) {
             }
         });
 

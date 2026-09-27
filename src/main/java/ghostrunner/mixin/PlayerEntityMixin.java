@@ -6,6 +6,7 @@ import ghostrunner.api.WallRunState;
 import ghostrunner.handler.WallRunHandler;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.entity.player.HungerManager;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.PacketByteBuf;
@@ -87,7 +88,6 @@ public abstract class PlayerEntityMixin
         if (self.getWorld().isClient()) return;
 
         if (!GhostrunnerState.isGhostrunner(self)) {
-            // 不是幽灵行者时，如果之前是跑墙状态，也要同步关闭
             if (ghostrunner$wallRunning) {
                 ghostrunner$exitWallRun();
                 ghostrunner$syncState();
@@ -95,20 +95,34 @@ public abstract class PlayerEntityMixin
             return;
         }
 
-        if (ghostrunner$cooldown > 0) ghostrunner$cooldown--;
+        //饱食度不消耗
+        HungerManager hunger = self.getHungerManager();
+        hunger.setFoodLevel(20);
+        hunger.setSaturationLevel(20.0F);
+        hunger.setExhaustion(0.0F);
 
+        // ★ 溶于水即死
+        if (self.isTouchingWater() || self.isInLava()) {
+            self.damage(self.getDamageSources().genericKill(), 1.0F);
+            return;
+        }
+
+        // ★ 摔落伤害清零
+        if (self.fallDistance > 0) {
+            self.fallDistance = 0;
+        }
+
+        if (ghostrunner$cooldown > 0) ghostrunner$cooldown--;
         if (self.isOnGround() || WallRunHandler.hasGroundBelow(self)) {
             ghostrunner$airborneTicks = 0;
         } else {
             ghostrunner$airborneTicks++;
         }
-
         if (ghostrunner$wallRunning) {
             ghostrunner$updateWallRun(self);
         } else {
             ghostrunner$tryEnterWallRun(self);
         }
-
         ghostrunner$syncState();
     }
 

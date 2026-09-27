@@ -2,6 +2,12 @@
   "itemGroup.ghostrunner.main": "幽灵行者",
   "item.ghostrunner.ghostrunner_tag": "改造器",
 
+  "category.ghostrunner": "幽灵行者",
+  "key.ghostrunner.respawn": "快速复活",
+
+  "gui.ghostrunner.death_title": "致命失误！",
+  "gui.ghostrunner.respawn_hint": "按 %s 复活",
+
   "message.ghostrunner.ascended": "§b凡人躯壳已然破碎。你成为了新的存在...幽灵行者。",
-  "message.ghostrunner.already_ascended": "§e你已不不再是“你”..."
+  "message.ghostrunner.already_ascended": "§e你已不不再是“你”，已不再能使用这件物品。"
 }

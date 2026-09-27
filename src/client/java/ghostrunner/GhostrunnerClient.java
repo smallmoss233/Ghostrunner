@@ -28,6 +28,8 @@ public class GhostrunnerClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
 
+        GhostrunnerKeys.register();
+
         // ---- 接收服务端状态 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.WALL_RUN_STATE_PACKET,
                 (client, handler, buf, sender) -> {
@@ -40,7 +42,18 @@ public class GhostrunnerClient implements ClientModInitializer {
                     });
                 });
 
-        // ---- 每 tick：检测跳跃键 + 更新相机 roll ----
+        // ---- 接收"幽灵行者"标记 ----
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.ASCENDED_STATE_PACKET,
+                (client, handler, buf, sender) -> {
+                    boolean ascended = buf.readBoolean();
+                    client.execute(() -> {
+                        if (client.player instanceof GhostrunnerState.GhostrunnerStateAccessor a) {
+                            a.ghostrunner$setAscended(ascended);
+                        }
+                    });
+                });
+
+        // ---- 每 tick：所有按键 + 相机倾斜 + R 复活 ----
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
 
             // 跳跃键上升沿 → 发跳出请求包
@@ -55,12 +68,6 @@ public class GhostrunnerClient implements ClientModInitializer {
                 prevJumpPressed = false;
             }
 
-            // 计算目标 roll
-            float targetRoll = ghostrunner$computeTargetRoll(client);
-
-            // 平滑插值
-            currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
-
             // 冲刺键检测（上升沿）
             boolean sprintPressed = client.options.sprintKey.isPressed();
             if (sprintPressed && !prevSprintPressed) {
@@ -72,20 +79,13 @@ public class GhostrunnerClient implements ClientModInitializer {
                 ClientPlayNetworking.send(Ghostrunner.DASH_PACKET, buf);
             }
             prevSprintPressed = sprintPressed;
+
+            // 计算目标 roll + 平滑插值
+            float targetRoll = ghostrunner$computeTargetRoll(client);
+            currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
         });
-
-        // ---- 接收"幽灵行者"标记 ----
-        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.ASCENDED_STATE_PACKET,
-                (client, handler, buf, sender) -> {
-                    boolean ascended = buf.readBoolean();
-                    client.execute(() -> {
-                        if (client.player instanceof GhostrunnerState.GhostrunnerStateAccessor a) {
-                            a.ghostrunner$setAscended(ascended);
-                        }
-                    });
-                });
-
     }
+
 
     /**
      * 根据玩家当前朝向与墙的方向，决定倾斜方向。

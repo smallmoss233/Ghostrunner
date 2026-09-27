@@ -43,7 +43,7 @@ public final class WallRunHandler {
     // ================================================================
 
     /** 进入跑墙所需的最低水平速度（方块/tick） */
-    public static final double MIN_ENTRY_H_SPEED = 0.06;
+    public static final double MIN_ENTRY_H_SPEED = 0.04;
 
     /** 进入跑墙时速度朝墙的最小归一化分量（0~1） */
     public static final double MIN_ENTRY_TOWARD_WALL = 0.3;
