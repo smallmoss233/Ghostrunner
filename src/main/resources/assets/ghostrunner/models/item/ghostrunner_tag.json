@@ -1,19 +1,22 @@
 {
 	"format_version": "26.3",
 	"credit": "Made with Blockbench",
+	"texture_size": [32, 32],
+	"textures": {
+		"1": "ghostrunner:item/ghostrunner_tag"
+	},
 	"elements": [
 		{
 			"from": [3, 4, 3],
 			"to": [13, 14, 13],
 			"rotation": {"x": 45, "y": 0, "z": 45, "origin": [7, 8, 7]},
-			"color": 0,
 			"faces": {
-				"north": {"uv": [0, 1, 10, 11], "texture": "#missing"},
-				"east": {"uv": [0, 1, 10, 11], "texture": "#missing"},
-				"south": {"uv": [3, 1, 13, 11], "texture": "#missing"},
-				"west": {"uv": [0, 1, 10, 11], "texture": "#missing"},
-				"up": {"uv": [3, 0, 13, 10], "texture": "#missing"},
-				"down": {"uv": [3, 0, 13, 10], "texture": "#missing"}
+				"north": {"uv": [0, 0, 5, 5], "texture": "#1"},
+				"east": {"uv": [0, 5, 5, 10], "texture": "#1"},
+				"south": {"uv": [5, 0, 10, 5], "texture": "#1"},
+				"west": {"uv": [5, 5, 10, 10], "texture": "#1"},
+				"up": {"uv": [0, 10, 5, 15], "texture": "#1"},
+				"down": {"uv": [10, 0, 15, 5], "texture": "#1"}
 			}
 		}
 	],

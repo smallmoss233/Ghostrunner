@@ -1,13 +1,17 @@
 {
   "itemGroup.ghostrunner.main": "Ghostrunner",
-  "item.ghostrunner.ghostrunner_tag": "Ascension Device",
+  "item.ghostrunner.ghostrunner_tag": "Modifier",
 
   "category.ghostrunner": "Ghostrunner",
   "key.ghostrunner.respawn": "Quick Respawn",
 
-  "gui.ghostrunner.death_title": "FATAL ERROR",
+  "gui.ghostrunner.death_title": "Fatal Error!",
   "gui.ghostrunner.respawn_hint": "Press %s to respawn",
 
-  "message.ghostrunner.ascended": "§bThe mortal shell is broken. You have become something new... a Ghostrunner.",
-  "message.ghostrunner.already_ascended": "§eYou are no longer 'you'. This device no longer answers to you."
+  "message.ghostrunner.ascended": "§bThe mortal shell is broken, the soul reforged into a blade. Welcome, Ghostrunner.",
+  "message.ghostrunner.already_ascended": "§eYou are no longer 'you'. There is no need, nor possibility, for another modification.",
+
+  "tooltip.ghostrunner.hold_shift": "§8Hold §7Shift §8for details...",
+  "item.ghostrunner.ghostrunner_tag.tip": "§7Strip away your mortal flesh, and reforge your consciousness into a blade.*Right-click to modify yourself into a Ghostrunner.",
+  "item.ghostrunner.ghostrunner_tag.detail": "§cWarning: The modification process involves severe physiological shock (reduces health to 1 point).*§cPlease use in a safe environment to avoid being ambushed by mobs during blindness.*§8—— 'Do not resist, this is just a system upgrade.'"
 }
