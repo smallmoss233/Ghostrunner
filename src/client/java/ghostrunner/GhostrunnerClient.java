@@ -11,28 +11,34 @@ import net.minecraft.util.math.Direction;
 
 public class GhostrunnerClient implements ClientModInitializer {
 
-    //耐力
+    // 耐力
     public static float currentStamina = 100.0f;
     public static final float STAMINA_MAX = 100.0f;
 
-    // ============ 客户端跑墙状态（由服务端同步） ============
+    // ============ 跑墙状态 ============
     public static boolean wallRunning = false;
     public static Direction wallSide = null;
-    private static boolean prevSprintPressed = false;
 
     // ============ 相机倾斜 ============
-    /** 目标最大倾斜角（弧度）。约 15 度 */
     public static final float MAX_ROLL = (float) Math.toRadians(15.0);
-    /** 平滑插值系数（0~1，越大越快） */
     public static final float ROLL_LERP = 0.15f;
-    /** 当前倾斜角，逐 tick 插值 */
     public static float currentRoll = 0.0f;
 
+    // ============ 冲刺特效 ============
     public static int dashEffectTicks = 0;
     public static final int DASH_EFFECT_DURATION = 8;
     public static long dashEffectSeed = 0L;
 
+    // ============ 按键状态 ============
     private static boolean prevJumpPressed = false;
+    private static boolean prevSprintPressed = false;
+    private static boolean prevF = false, prevB = false, prevL = false, prevR = false;
+
+    // ============ 子弹时间 ============
+    public static boolean inBulletTime = false;
+    private static int chargeHoldTicks = 0;
+    private static boolean chargeStarted = false;
+    private static final int CHARGE_THRESHOLD = 6;
 
     @Override
     public void onInitializeClient() {
@@ -40,73 +46,36 @@ public class GhostrunnerClient implements ClientModInitializer {
         GhostrunnerKeys.register();
         GhostrunnerHud.register();
 
-        // ---- 接收服务端状态 ----
+        // ---- 接收跑墙状态 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.WALL_RUN_STATE_PACKET,
                 (client, handler, buf, sender) -> {
                     boolean running = buf.readBoolean();
                     Direction side = running ? buf.readEnumConstant(Direction.class) : null;
-
                     client.execute(() -> {
                         wallRunning = running;
                         wallSide = side;
                     });
                 });
 
-        // ---- 接收"幽灵行者"标记 ----
+        // ---- 接收标记 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.ASCENDED_STATE_PACKET,
                 (client, handler, buf, sender) -> {
                     boolean ascended = buf.readBoolean();
                     client.execute(() -> {
-                        if (client.player instanceof GhostrunnerState.GhostrunnerStateAccessor a) {
-                            a.ghostrunner$setAscended(ascended);
-                        }
+                        GhostrunnerState.GhostrunnerStateAccessor a =
+                                (GhostrunnerState.GhostrunnerStateAccessor) client.player;
+                        if (a != null) a.ghostrunner$setAscended(ascended);
                     });
                 });
-
-        // ---- 每 tick：所有按键 + 相机倾斜 + R 复活 ----
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-
-            // 跳跃键上升沿 → 发跳出请求包
-            if (client.player != null) {
-                boolean pressed = client.options.jumpKey.isPressed();
-                if (pressed && !prevJumpPressed) {
-                    ClientPlayNetworking.send(Ghostrunner.JUMP_OFF_WALL_PACKET,
-                            PacketByteBufs.empty());
-                }
-                prevJumpPressed = pressed;
-            } else {
-                prevJumpPressed = false;
-            }
-
-            // 冲刺键检测（上升沿）
-            boolean sprintPressed = client.options.sprintKey.isPressed();
-            if (sprintPressed && !prevSprintPressed) {
-                PacketByteBuf buf = PacketByteBufs.create();
-                buf.writeBoolean(client.options.forwardKey.isPressed());
-                buf.writeBoolean(client.options.backKey.isPressed());
-                buf.writeBoolean(client.options.leftKey.isPressed());
-                buf.writeBoolean(client.options.rightKey.isPressed());
-                ClientPlayNetworking.send(Ghostrunner.DASH_PACKET, buf);
-            }
-            prevSprintPressed = sprintPressed;
-
-            // 计算目标 roll + 平滑插值
-            float targetRoll = ghostrunner$computeTargetRoll(client);
-            currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
-
-            // ★ 冲刺视觉特效倒计时
-            if (dashEffectTicks > 0) dashEffectTicks--;
-        });
 
         // ---- 接收耐力 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.STAMINA_PACKET,
                 (client, handler, buf, sender) -> {
                     float value = buf.readFloat();
-                    client.execute(() -> {
-                        currentStamina = value;
-                    });
+                    client.execute(() -> currentStamina = value);
                 });
 
+        // ---- 接收冲刺特效 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.DASH_SUCCESS_PACKET,
                 (client, handler, buf, sender) -> {
                     client.execute(() -> {
@@ -114,33 +83,119 @@ public class GhostrunnerClient implements ClientModInitializer {
                         dashEffectSeed = System.nanoTime();
                     });
                 });
+
+        // ---- 接收子弹时间状态 ----
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.BULLET_TIME_STATE_PACKET,
+                (client, handler, buf, sender) -> {
+                    boolean in = buf.readBoolean();
+                    client.execute(() -> {
+                        inBulletTime = in;
+                        // ★ 服务端结束子弹时间 → 清掉客户端蓄力标记
+                        if (!in) {
+                            chargeStarted = false;
+                            chargeHoldTicks = 0;
+                        }
+                    });
+                });
+
+        // ============================================================
+        //                       每 tick
+        // ============================================================
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+
+            if (client.player == null) {
+                resetAllKeys();
+                return;
+            }
+
+            // 跳跃
+            boolean jumpPressed = client.options.jumpKey.isPressed();
+            if (jumpPressed && !prevJumpPressed) {
+                ClientPlayNetworking.send(Ghostrunner.JUMP_OFF_WALL_PACKET,
+                        PacketByteBufs.empty());
+            }
+            prevJumpPressed = jumpPressed;
+
+            // ============ 冲刺键长按逻辑 ============
+            boolean sprintPressed = client.options.sprintKey.isPressed();
+            boolean f = client.options.forwardKey.isPressed();
+            boolean b = client.options.backKey.isPressed();
+            boolean l = client.options.leftKey.isPressed();
+            boolean r = client.options.rightKey.isPressed();
+
+            if (sprintPressed) {
+                if (prevSprintPressed) {
+                    // 持续按住
+                    chargeHoldTicks++;
+
+                    if (!chargeStarted && chargeHoldTicks >= CHARGE_THRESHOLD) {
+                        // 达到阈值 → 发 START
+                        PacketByteBuf buf = PacketByteBufs.create();
+                        buf.writeBoolean(f); buf.writeBoolean(b);
+                        buf.writeBoolean(l); buf.writeBoolean(r);
+                        ClientPlayNetworking.send(Ghostrunner.DASH_CHARGE_START_PACKET, buf);
+                        chargeStarted = true;
+                    } else if (chargeStarted && inBulletTime) {
+                        // 子弹时间中，方向变化 → 更新瞄准
+                        if (f != prevF || b != prevB || l != prevL || r != prevR) {
+                            PacketByteBuf buf = PacketByteBufs.create();
+                            buf.writeBoolean(f); buf.writeBoolean(b);
+                            buf.writeBoolean(l); buf.writeBoolean(r);
+                            ClientPlayNetworking.send(Ghostrunner.DASH_CHARGE_AIM_PACKET, buf);
+                        }
+                    }
+                } else {
+                    // 刚按下
+                    chargeHoldTicks = 0;
+                    chargeStarted = false;
+                }
+            } else {
+                if (prevSprintPressed) {
+                    // ★ 刚松开
+                    if (chargeStarted && inBulletTime) {
+                        // 子弹时间激活 → 释放冲刺
+                        ClientPlayNetworking.send(Ghostrunner.DASH_CHARGE_RELEASE_PACKET,
+                                PacketByteBufs.empty());
+                    } else {
+                        // 未激活子弹时间 → 普通冲刺（含 START 失败 fallback）
+                        PacketByteBuf buf = PacketByteBufs.create();
+                        buf.writeBoolean(f); buf.writeBoolean(b);
+                        buf.writeBoolean(l); buf.writeBoolean(r);
+                        ClientPlayNetworking.send(Ghostrunner.DASH_PACKET, buf);
+                    }
+                    chargeHoldTicks = 0;
+                    chargeStarted = false;
+                }
+            }
+            prevSprintPressed = sprintPressed;
+            prevF = f; prevB = b; prevL = l; prevR = r;
+
+            // 相机倾斜 + 冲刺特效
+            float targetRoll = ghostrunner$computeTargetRoll(client);
+            currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
+            if (dashEffectTicks > 0) dashEffectTicks--;
+        });
     }
 
+    private static void resetAllKeys() {
+        prevJumpPressed = false;
+        prevSprintPressed = false;
+        chargeHoldTicks = 0;
+        chargeStarted = false;
+        prevF = prevB = prevL = prevR = false;
+    }
 
-    /**
-     * 根据玩家当前朝向与墙的方向，决定倾斜方向。
-     * <p>墙在玩家左侧 → 左倾（正）；墙在右侧 → 右倾（负）。
-     */
     private static float ghostrunner$computeTargetRoll(net.minecraft.client.MinecraftClient client) {
-        if (!wallRunning || wallSide == null || client.player == null) {
-            return 0.0f;
-        }
+        if (!wallRunning || wallSide == null || client.player == null) return 0.0f;
 
         float yawRad = (float) Math.toRadians(client.player.getYaw());
-
-        // 玩家视线水平分量
         double lookX = -Math.sin(yawRad);
         double lookZ = Math.cos(yawRad);
 
-        // 墙相对玩家的方向（从玩家指向墙）
         double wallX = wallSide.getOffsetX();
         double wallZ = wallSide.getOffsetZ();
 
-        // 叉积 y 分量：判断墙在左还是右
-        // cross > 0：墙在玩家右侧；cross < 0：墙在玩家左侧
         double cross = lookX * wallZ - lookZ * wallX;
-
-        // 左右符号
         float side = cross > 0 ? -1.0f : 1.0f;
 
         return side * MAX_ROLL;

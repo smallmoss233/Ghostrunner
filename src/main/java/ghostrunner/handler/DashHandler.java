@@ -144,4 +144,32 @@ public final class DashHandler {
         if (result.lengthSquared() < 0.0001) return lookHoriz;
         return result.normalize();
     }
+
+    /**
+     * 根据 WASD 输入 + 玩家视线，算出瞄准方向（含 Y 分量）。
+     * <p>无输入时默认视线方向。
+     */
+    public static Vec3d computeAimFromInput(PlayerEntity player,
+                                            boolean forward, boolean back,
+                                            boolean left, boolean right) {
+        Vec3d look = player.getRotationVec(1.0F);
+        if (!forward && !back && !left && !right) {
+            return look.normalize();
+        }
+
+        Vec3d lookHoriz = new Vec3d(look.x, 0, look.z).normalize();
+        Vec3d rightVec = new Vec3d(-lookHoriz.z, 0, lookHoriz.x);
+
+        double dx = 0, dz = 0;
+        if (forward) { dx += lookHoriz.x; dz += lookHoriz.z; }
+        if (back)    { dx -= lookHoriz.x; dz -= lookHoriz.z; }
+        if (right)   { dx += rightVec.x;  dz += rightVec.z;  }
+        if (left)    { dx -= rightVec.x;  dz -= rightVec.z;  }
+
+        if (dx * dx + dz * dz < 0.0001) return look.normalize();
+
+        // 用视线的 Y 分量作为上下
+        double vy = look.y;
+        return new Vec3d(dx, vy, dz).normalize();
+    }
 }
