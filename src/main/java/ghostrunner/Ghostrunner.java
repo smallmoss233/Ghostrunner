@@ -1,6 +1,7 @@
 package ghostrunner;
 
 import ghostrunner.api.WallRunState;
+import ghostrunner.handler.ClimbHandler;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.util.Identifier;
@@ -26,10 +27,14 @@ public class Ghostrunner implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(JUMP_OFF_WALL_PACKET,
                 (server, player, handler, buf, responseSender) -> {
                     server.execute(() -> {
+                        // 1) 跑墙中 → 跳出
                         if (player instanceof WallRunState state
                                 && state.ghostrunner$isWallRunning()) {
                             state.ghostrunner$jumpOffWall();
+                            return;
                         }
+                        // 2) 否则尝试爬墙
+                        ClimbHandler.tryClimb(player);
                     });
                 });
     }

@@ -33,7 +33,7 @@ public final class WallRunHandler {
     public static final double JUMP_OUT_V = 0.40;
 
     /** 退出后多少 tick 内不能再进入（防止抖墙） */
-    public static final int REENTRY_COOLDOWN = 6;
+    public static final int REENTRY_COOLDOWN = 15;
 
     /** 进入跑墙后至少经过这么多 tick 才允许跳出（防误触） */
     public static final int MIN_WALL_RUN_TICKS = 4;
@@ -185,7 +185,23 @@ public final class WallRunHandler {
         double outX = -wall.getOffsetX() * JUMP_OUT_H;
         double outZ = -wall.getOffsetZ() * JUMP_OUT_H;
 
-        player.setVelocity(vel.x + outX, JUMP_OUT_V, vel.z + outZ);
+        // 检测"跳出方向"前方是否有可攀爬的平台
+        // 有 → 额外加向上推力，让玩家直接翻上去
+        // 无 → 普通跳出
+        int dx = -wall.getOffsetX();
+        int dz = -wall.getOffsetZ();
+        var climbTarget = ClimbHandler.findClimbTargetInDirection(player, dx, dz);
+
+        double extraUp = 0.0;
+        if (climbTarget != null) {
+            int heightDiff = climbTarget.getY() - player.getBlockPos().getY();
+            if (heightDiff >= 2) {
+                // 2 格以上才有必要"翻上去"，1 格普通跳跃就够
+                extraUp = 0.10 * (heightDiff - 1);
+            }
+        }
+
+        player.setVelocity(vel.x + outX, JUMP_OUT_V + extraUp, vel.z + outZ);
         player.velocityModified = true;
         player.fallDistance = 0;
     }
