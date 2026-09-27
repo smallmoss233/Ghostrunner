@@ -79,7 +79,10 @@ public class Ghostrunner implements ModInitializer {
                 });
 
         // 全局递减冲刺冷却
-        ServerTickEvents.END_SERVER_TICK.register(server -> DashHandler.tickCooldowns());
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            DashHandler.tickCooldowns();
+            ClimbHandler.tickCooldowns();
+        });
 
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (!(entity instanceof ServerPlayerEntity player)) return;

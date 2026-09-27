@@ -1,14 +1,15 @@
 package ghostrunner.handler;
 
-import net.minecraft.block.BlockState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.World;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class ClimbHandler {
 
@@ -19,16 +20,30 @@ public final class ClimbHandler {
     public static final double VY_1 = 0.42;
     public static final double VY_2 = 0.60;
     public static final double VY_3 = 0.78;
-
     public static final double FORWARD_V = 0.12;
 
+    /** 爬墙冷却（tick）。防止贴墙狂按空格无限登高。 */
+    public static final int CLIMB_COOLDOWN = 12;
+
+    private static final Map<UUID, Integer> cooldowns = new HashMap<>();
+
     // ================================================================
-    //                          目标检测
+    //                          冷却
     // ================================================================
 
-    /**
-     * 多方向检测：正前 + 左前 45° + 右前 45°，任一方向满足就返回。
-     */
+    public static void tickCooldowns() {
+        cooldowns.replaceAll((uuid, t) -> Math.max(0, t - 1));
+    }
+
+    public static boolean isOnCooldown(PlayerEntity player) {
+        Integer t = cooldowns.get(player.getUuid());
+        return t != null && t > 0;
+    }
+
+    // ================================================================
+    //                          目标检测（不变）
+    // ================================================================
+
     public static BlockPos findClimbTarget(PlayerEntity player) {
         Direction facing = player.getHorizontalFacing();
         Direction left = facing.rotateYCounterclockwise();
@@ -47,30 +62,22 @@ public final class ClimbHandler {
         return null;
     }
 
-    /**
-     * 检查指定水平方向的前方是否有可攀爬的墙。
-     * <p>返回墙顶站立位置，无墙或不符合条件返回 null。
-     */
     public static BlockPos findClimbTargetInDirection(PlayerEntity player, int dx, int dz) {
         if (dx == 0 && dz == 0) return null;
 
         World world = player.getWorld();
-        Box box = player.getBoundingBox();
+        var box = player.getBoundingBox();
         int feetY = (int) Math.floor(box.minY);
 
-        // 用玩家包围盒中心作为水平基准
         double centerX = (box.minX + box.maxX) * 0.5;
         double centerZ = (box.minZ + box.maxZ) * 0.5;
         int x = (int) Math.floor(centerX) + dx;
         int z = (int) Math.floor(centerZ) + dz;
 
-        int scanStart = feetY;
-        int scanEnd = feetY + MAX_CLIMB_HEIGHT;
-
         int wallTop = Integer.MIN_VALUE;
-        for (int y = scanStart; y <= scanEnd; y++) {
+        for (int y = feetY; y <= feetY + MAX_CLIMB_HEIGHT; y++) {
             BlockPos p = new BlockPos(x, y, z);
-            BlockState state = world.getBlockState(p);
+            var state = world.getBlockState(p);
             boolean hasCollision = !state.getCollisionShape(world, p).isEmpty();
 
             if (hasCollision) {
@@ -88,12 +95,10 @@ public final class ClimbHandler {
 
         BlockPos target = new BlockPos(x, targetY, z);
 
-        // 脚部目标位置必须有空间
         if (!world.getBlockState(target).getCollisionShape(world, target).isEmpty()) return null;
 
-        // 头部位置：允许低碰撞方块（半砖、地毯、台阶）
         BlockPos head = target.up();
-        VoxelShape headShape = world.getBlockState(head).getCollisionShape(world, head);
+        var headShape = world.getBlockState(head).getCollisionShape(world, head);
         if (!headShape.isEmpty()) {
             double maxY = headShape.getMax(Direction.Axis.Y);
             if (maxY >= 1.5) return null;
@@ -107,11 +112,16 @@ public final class ClimbHandler {
     // ================================================================
 
     public static void tryClimb(ServerPlayerEntity player) {
+        if (isOnCooldown(player)) return;
+
         BlockPos target = findClimbTarget(player);
         if (target == null) return;
 
         int heightDiff = target.getY() - player.getBlockPos().getY();
         applyClimbVelocity(player, heightDiff, player.getYaw());
+
+        // 设置冷却
+        cooldowns.put(player.getUuid(), CLIMB_COOLDOWN);
     }
 
     public static void applyClimbVelocity(PlayerEntity player, int heightDiff, float yaw) {
@@ -124,10 +134,7 @@ public final class ClimbHandler {
         if (vy == 0) return;
 
         Vec3d forward = Vec3d.fromPolar(0, yaw).normalize();
-        double vx = forward.x * FORWARD_V;
-        double vz = forward.z * FORWARD_V;
-
-        player.setVelocity(vx, vy, vz);
+        player.setVelocity(forward.x * FORWARD_V, vy, forward.z * FORWARD_V);
         player.velocityModified = true;
         player.fallDistance = 0;
     }
