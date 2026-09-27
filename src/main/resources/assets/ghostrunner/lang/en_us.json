@@ -1,0 +1,13 @@
+{
+  "itemGroup.ghostrunner.main": "Ghostrunner",
+  "item.ghostrunner.ghostrunner_tag": "Ascension Device",
+
+  "category.ghostrunner": "Ghostrunner",
+  "key.ghostrunner.respawn": "Quick Respawn",
+
+  "gui.ghostrunner.death_title": "FATAL ERROR",
+  "gui.ghostrunner.respawn_hint": "Press %s to respawn",
+
+  "message.ghostrunner.ascended": "§bThe mortal shell is broken. You have become something new... a Ghostrunner.",
+  "message.ghostrunner.already_ascended": "§eYou are no longer 'you'. This device no longer answers to you."
+}
