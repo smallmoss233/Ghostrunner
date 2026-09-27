@@ -4,7 +4,8 @@ public interface WallRunState {
     boolean ghostrunner$isWallRunning();
     void ghostrunner$jumpOffWall();
     void ghostrunner$clearWallRunCooldown();
-
-    /** 开启"冲刺贴墙窗口"，窗口内碰到墙必定触发跑墙。 */
     void ghostrunner$startDashWindow(int ticks);
+
+    /** 开启"冲刺衰减"，让玩家冲刺后快速刹停，消除惯性。 */
+    void ghostrunner$startDashDecay(int ticks);
 }

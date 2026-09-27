@@ -1,9 +1,15 @@
 package ghostrunner.handler;
 
+import ghostrunner.Ghostrunner;
 import ghostrunner.api.GhostrunnerStamina;
 import ghostrunner.api.WallRunState;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.HashMap;
@@ -25,6 +31,9 @@ public final class DashHandler {
 
     /** 冲刺后开启的贴墙窗口长度（tick）。8 tick = 0.4 秒，够冲刺 1.5 格。 */
     public static final int DASH_WALL_WINDOW_TICKS = 8;
+
+    /** 冲刺后开启的衰减窗口（tick）。20 tick = 1 秒。 */
+    public static final int DASH_DECAY_TICKS = 20;
 
     private static final Map<UUID, Integer> cooldowns = new HashMap<>();
 
@@ -81,10 +90,28 @@ public final class DashHandler {
             state.ghostrunner$jumpOffWall();
         }
 
+        // ★ 音效
+        player.getWorld().playSound(
+                null,
+                player.getX(), player.getY(), player.getZ(),
+                SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP,
+                SoundCategory.PLAYERS,
+                0.8f, 1.2f
+        );
+
+        // ★ 衰减
+        if (player instanceof WallRunState state) {
+            state.ghostrunner$startDashDecay(DASH_DECAY_TICKS);
+        }
+
         stamina.ghostrunner$consumeStamina(STAMINA_PER_DASH);
         if (inAir) stamina.ghostrunner$setAirDashUsed(true);
 
         cooldowns.put(player.getUuid(), DASH_COOLDOWN);
+
+        // 通知客户端：冲刺成功，播放视觉特效
+        PacketByteBuf buf = PacketByteBufs.create();
+        ServerPlayNetworking.send(player, Ghostrunner.DASH_SUCCESS_PACKET, buf);
     }
     /**
      * 根据 WASD 按键 + 玩家当前朝向，算出水平单位方向向量。

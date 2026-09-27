@@ -35,6 +35,7 @@ public abstract class PlayerEntityMixin
     @Unique private static final float GR_STAMINA_RECOVERY_PER_TICK = 0.625f;  // 每秒 12.5，8 秒回满
 
     @Unique private int ghostrunner$dashWindowTicks = 0;
+    @Unique private int ghostrunner$dashDecayTicks = 0;
 
     // ============ 跑墙状态 ============
     @Unique private boolean ghostrunner$wallRunning = false;
@@ -68,6 +69,11 @@ public abstract class PlayerEntityMixin
     @Override
     public void ghostrunner$startDashWindow(int ticks) {
         ghostrunner$dashWindowTicks = ticks;
+    }
+
+    @Override
+    public void ghostrunner$startDashDecay(int ticks) {
+        ghostrunner$dashDecayTicks = ticks;
     }
 
     @Override
@@ -109,6 +115,22 @@ public abstract class PlayerEntityMixin
     private void ghostrunner$onTick(CallbackInfo ci) {
         PlayerEntity self = (PlayerEntity) (Object) this;
         if (self.getWorld().isClient()) return;
+
+        // ★ 冲刺衰减：让冲刺后快速刹停（但落地/跑墙/水中立即取消）
+        if (ghostrunner$dashDecayTicks > 0) {
+            boolean grounded = self.isOnGround() || WallRunHandler.hasGroundBelow(self);
+
+            if (ghostrunner$wallRunning || grounded
+                    || self.isTouchingWater() || self.isInLava()) {
+                // 已经落地/跑墙/进水 → 无需继续衰减
+                ghostrunner$dashDecayTicks = 0;
+            } else {
+                ghostrunner$dashDecayTicks--;
+                Vec3d vel = self.getVelocity();
+                self.setVelocity(vel.x * 0.90, vel.y, vel.z * 0.90);
+                self.velocityModified = true;
+            }
+        }
 
         if (!GhostrunnerState.isGhostrunner(self)) {
             if (ghostrunner$wallRunning) {

@@ -28,6 +28,10 @@ public class GhostrunnerClient implements ClientModInitializer {
     /** 当前倾斜角，逐 tick 插值 */
     public static float currentRoll = 0.0f;
 
+    public static int dashEffectTicks = 0;
+    public static final int DASH_EFFECT_DURATION = 8;
+    public static long dashEffectSeed = 0L;
+
     private static boolean prevJumpPressed = false;
 
     @Override
@@ -89,6 +93,9 @@ public class GhostrunnerClient implements ClientModInitializer {
             // 计算目标 roll + 平滑插值
             float targetRoll = ghostrunner$computeTargetRoll(client);
             currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
+
+            // ★ 冲刺视觉特效倒计时
+            if (dashEffectTicks > 0) dashEffectTicks--;
         });
 
         // ---- 接收耐力 ----
@@ -97,6 +104,14 @@ public class GhostrunnerClient implements ClientModInitializer {
                     float value = buf.readFloat();
                     client.execute(() -> {
                         currentStamina = value;
+                    });
+                });
+
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.DASH_SUCCESS_PACKET,
+                (client, handler, buf, sender) -> {
+                    client.execute(() -> {
+                        dashEffectTicks = DASH_EFFECT_DURATION;
+                        dashEffectSeed = System.nanoTime();
                     });
                 });
     }
