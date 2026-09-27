@@ -1,0 +1,44 @@
+{
+	"schemaVersion": 1,
+	"id": "ghostrunner",
+	"version": "${version}",
+	"name": "Ghostrunner",
+	"description": "在MC里玩到《幽灵行者2》！",
+	"authors": [
+		"Small Moss"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "MIT",
+	"icon": "assets/ghostrunner/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"ghostrunner.Ghostrunner"
+		],
+		"client": [
+			"ghostrunner.GhostrunnerClient"
+		],
+		"fabric-datagen": [
+			"ghostrunner.GhostrunnerDataGenerator"
+		]
+	},
+	"mixins": [
+		"ghostrunner.mixins.json",
+		{
+			"config": "ghostrunner.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*",
+        "newjavabackport": "*"
+    },
+	"suggests": {
+	}
+}
