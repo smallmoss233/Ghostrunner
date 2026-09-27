@@ -1,6 +1,7 @@
 package ghostrunner.mixin;
 
 import ghostrunner.Ghostrunner;
+import ghostrunner.api.GhostrunnerStamina;
 import ghostrunner.api.GhostrunnerState;
 import ghostrunner.api.WallRunState;
 import ghostrunner.handler.WallRunHandler;
@@ -21,7 +22,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(PlayerEntity.class)
 public abstract class PlayerEntityMixin
-        implements WallRunState, GhostrunnerState.GhostrunnerStateAccessor {
+        implements WallRunState, GhostrunnerState.GhostrunnerStateAccessor,
+        GhostrunnerStamina {
+
+    // ============ 耐力系统 ============
+    @Unique private float ghostrunner$stamina = 100.0f;
+    @Unique private boolean ghostrunner$airDashUsed = false;
+    @Unique private float ghostrunner$lastSentStamina = -1.0f;
+
+    // 常量
+    @Unique private static final float GR_STAMINA_MAX = 100.0f;
+    @Unique private static final float GR_STAMINA_RECOVERY_PER_TICK = 0.625f;  // 每秒 12.5，8 秒回满
+
+    @Unique private int ghostrunner$dashWindowTicks = 0;
 
     // ============ 跑墙状态 ============
     @Unique private boolean ghostrunner$wallRunning = false;
@@ -45,6 +58,16 @@ public abstract class PlayerEntityMixin
     @Override
     public boolean ghostrunner$isWallRunning() {
         return ghostrunner$wallRunning;
+    }
+
+    @Override
+    public void ghostrunner$clearWallRunCooldown() {
+        ghostrunner$cooldown = 0;
+    }
+
+    @Override
+    public void ghostrunner$startDashWindow(int ticks) {
+        ghostrunner$dashWindowTicks = ticks;
     }
 
     @Override
@@ -113,6 +136,9 @@ public abstract class PlayerEntityMixin
         }
 
         if (ghostrunner$cooldown > 0) ghostrunner$cooldown--;
+
+        if (ghostrunner$dashWindowTicks > 0) ghostrunner$dashWindowTicks--;
+
         if (self.isOnGround() || WallRunHandler.hasGroundBelow(self)) {
             ghostrunner$airborneTicks = 0;
         } else {
@@ -124,6 +150,23 @@ public abstract class PlayerEntityMixin
             ghostrunner$tryEnterWallRun(self);
         }
         ghostrunner$syncState();
+
+        // ★ 恢复耐力
+        if (ghostrunner$stamina < GR_STAMINA_MAX) {
+            ghostrunner$stamina = Math.min(GR_STAMINA_MAX,
+                    ghostrunner$stamina + GR_STAMINA_RECOVERY_PER_TICK);
+        }
+
+        // ★ 重置空中冲刺（落地 / 跑墙 / 爬墙触发时）
+        if (self.isOnGround()
+                || WallRunHandler.hasGroundBelow(self)
+                || ghostrunner$wallRunning
+                || self.isTouchingWater()) {
+            ghostrunner$airDashUsed = false;
+        }
+
+        // ★ 同步耐力到客户端
+        ghostrunner$syncStamina();
     }
 
     // ================================================================
@@ -148,6 +191,23 @@ public abstract class PlayerEntityMixin
 
     @Unique
     private void ghostrunner$tryEnterWallRun(PlayerEntity self) {
+        // ============ 冲刺窗口：贴墙必触发，无视一切条件 ============
+        if (ghostrunner$dashWindowTicks > 0) {
+            Direction wall = WallRunHandler.findWall(self);
+            if (wall != null) {
+                Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
+                if (locked != null) {
+                    ghostrunner$wallRunning = true;
+                    ghostrunner$wallSide = wall;
+                    ghostrunner$lockedDirection = locked;
+                    ghostrunner$wallRunTicks = 0;
+                    ghostrunner$dashWindowTicks = 0; // 用掉就清空，避免连续触发
+                    return;
+                }
+            }
+        }
+
+        // ============ 常规流程 ============
         if (ghostrunner$cooldown > 0) return;
         if (ghostrunner$airborneTicks < WallRunHandler.MIN_AIRBORNE_TICKS) return;
         if (!WallRunHandler.canEnter(self)) return;
@@ -197,6 +257,20 @@ public abstract class PlayerEntityMixin
         ghostrunner$cooldown = WallRunHandler.REENTRY_COOLDOWN;
     }
 
+    @Unique
+    private void ghostrunner$syncStamina() {
+        PlayerEntity self = (PlayerEntity) (Object) this;
+        if (!(self instanceof ServerPlayerEntity sp)) return;
+
+        // 只在变化超过 0.1 时才发包（减少网络开销）
+        if (Math.abs(ghostrunner$stamina - ghostrunner$lastSentStamina) < 0.1f) return;
+        ghostrunner$lastSentStamina = ghostrunner$stamina;
+
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeFloat(ghostrunner$stamina);
+        ServerPlayNetworking.send(sp, Ghostrunner.STAMINA_PACKET, buf);
+    }
+
     // ================================================================
     //                       网络同步
     // ================================================================
@@ -221,5 +295,34 @@ public abstract class PlayerEntityMixin
             buf.writeEnumConstant(ghostrunner$wallSide);
         }
         ServerPlayNetworking.send(sp, Ghostrunner.WALL_RUN_STATE_PACKET, buf);
+    }
+
+    // ================================================================
+    //                    GhostrunnerStamina 实现
+    // ================================================================
+
+    @Override
+    public float ghostrunner$getStamina() {
+        return ghostrunner$stamina;
+    }
+
+    @Override
+    public void ghostrunner$setStamina(float value) {
+        ghostrunner$stamina = Math.max(0, Math.min(GR_STAMINA_MAX, value));
+    }
+
+    @Override
+    public void ghostrunner$consumeStamina(float amount) {
+        ghostrunner$setStamina(ghostrunner$stamina - amount);
+    }
+
+    @Override
+    public boolean ghostrunner$isAirDashUsed() {
+        return ghostrunner$airDashUsed;
+    }
+
+    @Override
+    public void ghostrunner$setAirDashUsed(boolean used) {
+        ghostrunner$airDashUsed = used;
     }
 }

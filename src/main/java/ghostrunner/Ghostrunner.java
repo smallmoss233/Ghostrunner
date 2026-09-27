@@ -33,6 +33,8 @@ public class Ghostrunner implements ModInitializer {
             new Identifier(MOD_ID, "dash");
     public static final Identifier ASCENDED_STATE_PACKET =
             new Identifier(MOD_ID, "ascended_state");
+    /** 服务端 → 客户端：同步耐力值 */
+    public static final Identifier STAMINA_PACKET = new Identifier(MOD_ID, "stamina");
 
     @Override
     public void onInitialize() {

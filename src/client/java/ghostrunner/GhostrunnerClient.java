@@ -1,6 +1,7 @@
 package ghostrunner;
 
 import ghostrunner.api.GhostrunnerState;
+import ghostrunner.gui.GhostrunnerHud;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -9,6 +10,10 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.math.Direction;
 
 public class GhostrunnerClient implements ClientModInitializer {
+
+    //耐力
+    public static float currentStamina = 100.0f;
+    public static final float STAMINA_MAX = 100.0f;
 
     // ============ 客户端跑墙状态（由服务端同步） ============
     public static boolean wallRunning = false;
@@ -29,6 +34,7 @@ public class GhostrunnerClient implements ClientModInitializer {
     public void onInitializeClient() {
 
         GhostrunnerKeys.register();
+        GhostrunnerHud.register();
 
         // ---- 接收服务端状态 ----
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.WALL_RUN_STATE_PACKET,
@@ -84,6 +90,15 @@ public class GhostrunnerClient implements ClientModInitializer {
             float targetRoll = ghostrunner$computeTargetRoll(client);
             currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
         });
+
+        // ---- 接收耐力 ----
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.STAMINA_PACKET,
+                (client, handler, buf, sender) -> {
+                    float value = buf.readFloat();
+                    client.execute(() -> {
+                        currentStamina = value;
+                    });
+                });
     }
 
 

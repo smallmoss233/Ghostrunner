@@ -1,5 +1,6 @@
 package ghostrunner.handler;
 
+import ghostrunner.api.GhostrunnerStamina;
 import ghostrunner.api.WallRunState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -18,6 +19,12 @@ public final class DashHandler {
     public static final double DASH_SPEED = 1.20;
     public static final double DASH_UPWARD = 0.08;
     public static final int DASH_COOLDOWN = 20;
+
+    /** 每次冲刺消耗的耐力 */
+    public static final float STAMINA_PER_DASH = 25.0f;   // 25×4 = 100，正好 4 次
+
+    /** 冲刺后开启的贴墙窗口长度（tick）。8 tick = 0.4 秒，够冲刺 1.5 格。 */
+    public static final int DASH_WALL_WINDOW_TICKS = 8;
 
     private static final Map<UUID, Integer> cooldowns = new HashMap<>();
 
@@ -48,8 +55,20 @@ public final class DashHandler {
         if (player.isFallFlying()) return;
         if (player.isSneaking()) return;
 
+        if (!(player instanceof GhostrunnerStamina stamina)) return;
+
+        boolean inAir = !player.isOnGround() && !WallRunHandler.hasGroundBelow(player);
+        if (inAir && stamina.ghostrunner$isAirDashUsed()) return;
+        if (stamina.ghostrunner$getStamina() < STAMINA_PER_DASH) return;
+
         Vec3d direction = computeDashDirection(player, forward, back, left, right);
         if (direction == null) return;
+
+        // ★ 清除冷却 + 开启贴墙窗口
+        if (player instanceof WallRunState state) {
+            state.ghostrunner$clearWallRunCooldown();
+            state.ghostrunner$startDashWindow(DASH_WALL_WINDOW_TICKS);
+        }
 
         player.setVelocity(
                 direction.x * DASH_SPEED,
@@ -58,14 +77,15 @@ public final class DashHandler {
         player.velocityModified = true;
         player.fallDistance = 0;
 
-        // 冲刺打断跑墙
         if (player instanceof WallRunState state && state.ghostrunner$isWallRunning()) {
             state.ghostrunner$jumpOffWall();
         }
 
+        stamina.ghostrunner$consumeStamina(STAMINA_PER_DASH);
+        if (inAir) stamina.ghostrunner$setAirDashUsed(true);
+
         cooldowns.put(player.getUuid(), DASH_COOLDOWN);
     }
-
     /**
      * 根据 WASD 按键 + 玩家当前朝向，算出水平单位方向向量。
      * <p>无方向输入时退化为"视线前方"。
