@@ -18,8 +18,8 @@ public final class BulletTimeManager {
 
     /** 冻结半径（格） */
     public static final double RADIUS = 30.0;
-    /** 时间缩放：5 表示附近实体慢 5 倍 */
-    public static final int TIME_SCALE = 5;
+    /** 时间缩放：10 表示附近实体慢 10 倍 */
+    public static final int TIME_SCALE = 10;
 
     public static void enter(ServerPlayerEntity player) {
         activePlayers.add(player.getUuid());

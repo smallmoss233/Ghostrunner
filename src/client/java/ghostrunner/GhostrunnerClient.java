@@ -38,7 +38,7 @@ public class GhostrunnerClient implements ClientModInitializer {
     public static boolean inBulletTime = false;
     private static int chargeHoldTicks = 0;
     private static boolean chargeStarted = false;
-    private static final int CHARGE_THRESHOLD = 6;
+    private static final int CHARGE_THRESHOLD = 4;
 
     @Override
     public void onInitializeClient() {

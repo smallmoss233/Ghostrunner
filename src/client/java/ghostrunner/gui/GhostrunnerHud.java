@@ -93,20 +93,8 @@ public final class GhostrunnerHud {
             int w = ctx.getScaledWindowWidth();
             int h = ctx.getScaledWindowHeight();
 
-            // 蓝紫色半透明滤镜
+            // 蓝色半透明叠加层
             ctx.fill(0, 0, w, h, 0x303060A0);
-            // 边缘暗角
-            int th = Math.min(w, h) / 5;
-            ctx.fill(0, 0, w, th, 0x60000000);
-            ctx.fill(0, h - th, w, h, 0x60000000);
-            ctx.fill(0, 0, th, h, 0x60000000);
-            ctx.fill(w - th, 0, w, h, 0x60000000);
-
-            // 中央小圆点（瞄准指示）
-            int cx = w / 2;
-            int cy = h / 2;
-            ctx.fill(cx - 2, cy, cx + 2, cy + 1, 0xFFA0DDFF);
-            ctx.fill(cx, cy - 2, cx + 1, cy + 2, 0xFFA0DDFF);
         });
     }
 

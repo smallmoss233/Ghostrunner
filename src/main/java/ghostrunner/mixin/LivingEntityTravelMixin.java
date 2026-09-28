@@ -19,11 +19,18 @@ public abstract class LivingEntityTravelMixin {
         if (!bt.ghostrunner$isInBulletTime()) return;
 
         Vec3d vel = player.getVelocity();
-        // 水平几乎停住 + 垂直抵消重力（缓慢下落）
-        player.setVelocity(
-                vel.x * 0.15,
-                vel.y * 0.10 + 0.02,
-                vel.z * 0.15);
+
+        // 水平：快速衰减
+        double newVx = vel.x * 0.15;
+        double newVz = vel.z * 0.15;
+
+        // 垂直：衰减，但接近 0 时锁到缓慢下落（-0.01），绝不上飘
+        double newVy = vel.y * 0.10;
+        if (newVy > -0.01) {
+            newVy = -0.01;   // 保证至少有 0.01 的下落速度
+        }
+
+        player.setVelocity(newVx, newVy, newVz);
         player.velocityModified = true;
         player.fallDistance = 0;
     }
