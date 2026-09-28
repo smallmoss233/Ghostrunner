@@ -68,9 +68,11 @@ public final class WallRunHandler {
 
             for (BlockPos p : BlockPos.iterate(min, max)) {
                 BlockState state = world.getBlockState(p);
-                if (state.isIn(GRTags.WALL_RUNNABLE)) {
-                    return dir;
-                }
+                // 黑名单里的方块不能跑
+                if (state.isIn(GRTags.WALL_RUN_BLACKLIST)) continue;
+                // 有碰撞体的方块才能跑（过滤掉草、花、藤蔓等）
+                if (state.getCollisionShape(world, p).isEmpty()) continue;
+                return dir;
             }
         }
         return null;

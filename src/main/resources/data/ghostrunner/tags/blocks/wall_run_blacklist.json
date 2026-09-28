@@ -1,0 +1,22 @@
+{
+  "values": [
+    "#minecraft:leaves",
+
+    "minecraft:snow",
+    "minecraft:powder_snow",
+
+    "minecraft:cobweb",
+    "minecraft:scaffolding",
+
+    "minecraft:honey_block",
+    "minecraft:slime_block",
+
+    "minecraft:vine",
+    "minecraft:glow_lichen",
+    "minecraft:hanging_roots",
+
+    "#minecraft:flowers",
+    "#minecraft:saplings",
+    "#minecraft:crops"
+  ]
+}
