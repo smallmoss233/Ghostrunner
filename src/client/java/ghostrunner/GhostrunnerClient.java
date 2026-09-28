@@ -11,6 +11,11 @@ import net.minecraft.util.math.Direction;
 
 public class GhostrunnerClient implements ClientModInitializer {
 
+    /** 子弹时间滤镜透明度 0~1 */
+    public static float bulletTimeFilterAlpha = 0.0f;
+    /** 耐力条透明度 0~1 */
+    public static float staminaBarAlpha = 0.0f;
+
     // 耐力
     public static float currentStamina = 100.0f;
     public static final float STAMINA_MAX = 100.0f;
@@ -174,6 +179,22 @@ public class GhostrunnerClient implements ClientModInitializer {
             float targetRoll = ghostrunner$computeTargetRoll(client);
             currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
             if (dashEffectTicks > 0) dashEffectTicks--;
+
+            // ============ HUD 插值 ============
+            // 子弹时间滤镜淡入淡出
+            float bulletTarget = inBulletTime ? 1.0f : 0.0f;
+            bulletTimeFilterAlpha += (bulletTarget - bulletTimeFilterAlpha) * 0.20f;
+            if (Math.abs(bulletTimeFilterAlpha - bulletTarget) < 0.005f) {
+                bulletTimeFilterAlpha = bulletTarget;
+            }
+
+            // 耐力条（满耐力时淡出）
+            boolean showStamina = currentStamina < STAMINA_MAX - 0.5f;
+            float staminaTarget = showStamina ? 1.0f : 0.0f;
+            staminaBarAlpha += (staminaTarget - staminaBarAlpha) * 0.25f;
+            if (Math.abs(staminaBarAlpha - staminaTarget) < 0.005f) {
+                staminaBarAlpha = staminaTarget;
+            }
         });
     }
 

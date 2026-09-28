@@ -11,9 +11,7 @@ public final class GhostrunnerHud {
     private GhostrunnerHud() {}
 
     // ============ 尺寸 ============
-    // 大幅缩小：半宽从 140 降到 90（总长 180，不再横跨大半个屏幕）
     private static final int HALF_WIDTH = 90;
-    // 弧度减小，避免小条时显得弧度过于夸张
     private static final int CURVE_DEPTH = 6;
     private static final float Y_RATIO = 0.58f;
 
@@ -26,6 +24,9 @@ public final class GhostrunnerHud {
     private static final int COLOR_END_FRAME   = 0xFFB0B8C0;
     private static final int COLOR_END_CORE    = 0xFF303840;
 
+    // 子弹时间滤镜基础 alpha（0x30 = 48）
+    private static final int BULLET_TIME_BASE_ALPHA = 0x30;
+
     public static void register() {
         // ---- 耐力 ----
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
@@ -33,11 +34,11 @@ public final class GhostrunnerHud {
             if (client.player == null || client.options.hudHidden) return;
             if (!GhostrunnerState.isGhostrunner(client.player)) return;
 
+            float alpha = GhostrunnerClient.staminaBarAlpha;
+            if (alpha <= 0.01f) return;
+
             float stamina = GhostrunnerClient.currentStamina;
             float max = GhostrunnerClient.STAMINA_MAX;
-
-            if (stamina >= max - 0.5f) return;
-
             float ratio = Math.max(0, Math.min(1, stamina / max));
 
             int screenW = ctx.getScaledWindowWidth();
@@ -45,7 +46,7 @@ public final class GhostrunnerHud {
             int centerX = screenW / 2;
             int baseY = (int) (screenH * Y_RATIO);
 
-            drawBar(ctx, centerX, baseY, ratio);
+            drawBar(ctx, centerX, baseY, ratio, alpha);
         });
 
         // ---- 准星 ----
@@ -83,37 +84,44 @@ public final class GhostrunnerHud {
             drawSpeedLines(ctx, screenW, screenH, intensity, GhostrunnerClient.dashEffectSeed);
         });
 
-        // ---- 子弹时间滤镜 ----
+        // ---- 子弹时间滤镜（淡入淡出） ----
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null || client.options.hudHidden) return;
             if (!GhostrunnerState.isGhostrunner(client.player)) return;
-            if (!GhostrunnerClient.inBulletTime) return;
+
+            float alpha = GhostrunnerClient.bulletTimeFilterAlpha;
+            if (alpha <= 0.01f) return;
 
             int w = ctx.getScaledWindowWidth();
             int h = ctx.getScaledWindowHeight();
 
-            // 蓝色半透明叠加层
-            ctx.fill(0, 0, w, h, 0x303060A0);
+            // 基础 alpha 乘以插值 alpha
+            int a = (int) (BULLET_TIME_BASE_ALPHA * alpha);
+            int color = (a << 24) | 0x003060A0;
+
+            ctx.fill(0, 0, w, h, color);
         });
     }
 
     // ================================================================
+    //                        耐力条
+    // ================================================================
 
-    private static void drawBar(DrawContext ctx, int centerX, int baseY, float ratio) {
+    private static void drawBar(DrawContext ctx, int centerX, int baseY, float ratio, float alpha) {
         int segments = HALF_WIDTH * 2;
         float halfR = ratio * 0.5f;
         int startI = (int) ((0.5f - halfR) * segments);
         int endI   = (int) ((0.5f + halfR) * segments);
 
-        // 0. 完整外框（整体厚度降为 12px，上下各6）
+        // 0. 完整外框
         for (int i = 0; i <= segments; i++) {
             float t = (float) i / segments;
             int px = (int) (centerX - HALF_WIDTH + 2f * HALF_WIDTH * t);
             int py = (int) (baseY + Math.sin(t * Math.PI) * CURVE_DEPTH);
 
-            ctx.fill(px, py - 6, px + 1, py - 5, 0xFFE8F0F8);   // 上边
-            ctx.fill(px, py + 5, px + 1, py + 6, 0xFFE8F0F8);   // 下边
+            ctx.fill(px, py - 6, px + 1, py - 5, applyAlpha(0xFFE8F0F8, alpha));
+            ctx.fill(px, py + 5, px + 1, py + 6, applyAlpha(0xFFE8F0F8, alpha));
         }
 
         // 1. 底部轨道虚线
@@ -121,10 +129,10 @@ public final class GhostrunnerHud {
             float t = (float) i / segments;
             int px = (int) (centerX - HALF_WIDTH + 2f * HALF_WIDTH * t);
             int py = (int) (baseY + Math.sin(t * Math.PI) * CURVE_DEPTH);
-            ctx.fill(px, py, px + 1, py + 1, COLOR_TRACK_OUTER);
+            ctx.fill(px, py, px + 1, py + 1, applyAlpha(COLOR_TRACK_OUTER, alpha));
         }
 
-        // 2. 亮段（发光层和核心层同步变薄）
+        // 2. 亮段
         for (int i = startI; i <= endI; i++) {
             float t = (float) i / segments;
             int px = (int) (centerX - HALF_WIDTH + 2f * HALF_WIDTH * t);
@@ -133,28 +141,35 @@ public final class GhostrunnerHud {
             float centerDist = Math.abs(t - 0.5f) * 2f;
             float edgeFade = 1.0f - centerDist * centerDist;
 
-            ctx.fill(px, py - 5, px + 1, py + 6, COLOR_GLOW_WHITE);
-            ctx.fill(px, py - 4, px + 1, py + 5, COLOR_GLOW_BLUE);
+            ctx.fill(px, py - 5, px + 1, py + 6, applyAlpha(COLOR_GLOW_WHITE, alpha));
+            ctx.fill(px, py - 4, px + 1, py + 5, applyAlpha(COLOR_GLOW_BLUE, alpha));
             int coreHalf = edgeFade > 0.5f ? 2 : 1;
-            ctx.fill(px, py - coreHalf, px + 1, py + coreHalf + 1, COLOR_CORE);
+            ctx.fill(px, py - coreHalf, px + 1, py + coreHalf + 1, applyAlpha(COLOR_CORE, alpha));
         }
 
-        // 3. 中央竖向高光（缩短）
+        // 3. 中央竖向高光
         int midY = baseY + CURVE_DEPTH;
-        ctx.fill(centerX, midY - 7, centerX + 1, midY + 7, COLOR_CORE_HI);
-        ctx.fill(centerX - 4, midY - 6, centerX + 5, midY + 6, 0x4000DDFF);
+        ctx.fill(centerX, midY - 7, centerX + 1, midY + 7, applyAlpha(COLOR_CORE_HI, alpha));
+        ctx.fill(centerX - 4, midY - 6, centerX + 5, midY + 6, applyAlpha(0x4000DDFF, alpha));
 
         // 4. 端点铆钉
-        drawEndCap(ctx, centerX - HALF_WIDTH, baseY);
-        drawEndCap(ctx, centerX + HALF_WIDTH, baseY);
+        drawEndCap(ctx, centerX - HALF_WIDTH, baseY, alpha);
+        drawEndCap(ctx, centerX + HALF_WIDTH, baseY, alpha);
     }
 
-    /** 端点铆钉：尺寸缩小为 8x8 像素 */
-    private static void drawEndCap(DrawContext ctx, int x, int y) {
-        ctx.fill(x - 4, y - 4, x + 4, y + 4, 0xFF000000);
-        ctx.fill(x - 3, y - 3, x + 3, y + 3, COLOR_END_FRAME);
-        ctx.fill(x - 2, y - 2, x + 2, y + 2, COLOR_END_CORE);
-        ctx.fill(x - 1, y - 1, x + 1, y + 1, COLOR_CORE_HI);
+    private static void drawEndCap(DrawContext ctx, int x, int y, float alpha) {
+        ctx.fill(x - 4, y - 4, x + 4, y + 4, applyAlpha(0xFF000000, alpha));
+        ctx.fill(x - 3, y - 3, x + 3, y + 3, applyAlpha(COLOR_END_FRAME, alpha));
+        ctx.fill(x - 2, y - 2, x + 2, y + 2, applyAlpha(COLOR_END_CORE, alpha));
+        ctx.fill(x - 1, y - 1, x + 1, y + 1, applyAlpha(COLOR_CORE_HI, alpha));
+    }
+
+    /** 颜色乘以透明度 */
+    private static int applyAlpha(int color, float alpha) {
+        if (alpha >= 0.999f) return color;
+        int a = (color >>> 24) & 0xFF;
+        int newA = (int) (a * alpha);
+        return (newA << 24) | (color & 0x00FFFFFF);
     }
 
     // ================================================================
@@ -165,31 +180,20 @@ public final class GhostrunnerHud {
     private static final int CROSSHAIR_BLUE    = 0xFF00DDFF;
     private static final int CROSSHAIR_TICK    = 0x60A0F0FF;
 
-    /** 内层白六边形半径 */
     private static final float HEX_INNER_R = 2.0f;
-    /** 中层蓝六边形半径 */
     private static final float HEX_MID_R   = 5.0f;
-    /** 外层蓝六边形半径 */
     private static final float HEX_OUTER_R = 8.5f;
 
-    /** 45° 刻线起止半径（往外推，留出明显空隙） */
-    private static final float TICK_INNER_R = 14.0f; // 离六边形有 5.5px 的空隙
-    private static final float TICK_OUTER_R = 20.0f; // 总长度 6px，更长更显眼
+    private static final float TICK_INNER_R = 14.0f;
+    private static final float TICK_OUTER_R = 20.0f;
 
     private static void drawGhostrunnerCrosshair(DrawContext ctx, int cx, int cy) {
-        // 外层蓝六边形（半透明）
         drawHexagon(ctx, cx, cy, HEX_OUTER_R, 1, 0xA0A0F0FF);
-
-        // 中层蓝六边形
         drawHexagon(ctx, cx, cy, HEX_MID_R, 1, CROSSHAIR_BLUE);
-
-        // 内层白六边形
         drawHexagon(ctx, cx, cy, HEX_INNER_R, 1, CROSSHAIR_WHITE);
 
-        // 中心点
         ctx.fill(cx, cy, cx + 1, cy + 1, CROSSHAIR_WHITE);
 
-        // 45° 四条刻线
         for (int dir = 0; dir < 4; dir++) {
             float angle = (float) (dir * Math.PI / 2 + Math.PI / 4);
             float dx = (float) Math.cos(angle);
@@ -235,7 +239,7 @@ public final class GhostrunnerHud {
     }
 
     // ================================================================
-    //                    冲刺视觉特效（优化版）
+    //                    冲刺视觉特效
     // ================================================================
 
     private static void drawDashVignette(DrawContext ctx, int w, int h, float intensity) {
