@@ -3,11 +3,11 @@
 	"package": "ghostrunner.mixin.client",
 	"compatibilityLevel": "JAVA_17",
 	"client": [
+      "DeathScreenMixin",
       "GameRendererMixin",
       "InGameHudMixin",
-      "ScreenMixin",
-      "DeathScreenMixin"
-	],
+      "ScreenMixin"
+    ],
 	"injectors": {
 		"defaultRequire": 1
 	}
