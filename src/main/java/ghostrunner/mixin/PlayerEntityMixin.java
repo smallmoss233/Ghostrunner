@@ -217,10 +217,12 @@ public abstract class PlayerEntityMixin
 
     @Unique
     private void ghostrunner$tryEnterWallRun(PlayerEntity self) {
-        // 冲刺窗口：贴墙必触发
+        // ============ 冲刺窗口：放宽要求，仍要朝墙 ============
         if (ghostrunner$dashWindowTicks > 0) {
             Direction wall = WallRunHandler.findWall(self);
-            if (wall != null) {
+            if (wall != null
+                    && WallRunHandler.isMovingTowardWall(self, wall,
+                    WallRunHandler.DASH_WINDOW_TOWARD_WALL)) {
                 Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
                 if (locked != null) {
                     ghostrunner$wallRunning = true;
@@ -233,14 +235,14 @@ public abstract class PlayerEntityMixin
             }
         }
 
-        // 常规流程
+        // ============ 常规流程 ============
         if (ghostrunner$cooldown > 0) return;
         if (ghostrunner$airborneTicks < WallRunHandler.MIN_AIRBORNE_TICKS) return;
         if (!WallRunHandler.canEnter(self)) return;
 
         Direction wall = WallRunHandler.findWall(self);
         if (wall == null) return;
-        if (!WallRunHandler.isMovingTowardWall(self, wall)) return;
+        if (!WallRunHandler.isMovingTowardWall(self, wall)) return;   // 默认阈值 0.3
 
         Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
         if (locked == null) return;
