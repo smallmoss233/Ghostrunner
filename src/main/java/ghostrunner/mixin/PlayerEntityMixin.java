@@ -45,6 +45,7 @@ public abstract class PlayerEntityMixin
     // ============ 冲刺 ============
     @Unique private int ghostrunner$dashWindowTicks = 0;
     @Unique private int ghostrunner$dashDecayTicks = 0;
+    @Unique private Vec3d ghostrunner$dashDirection = Vec3d.ZERO;
 
     // ============ 跑墙 ============
     @Unique private boolean ghostrunner$wallRunning = false;
@@ -77,6 +78,14 @@ public abstract class PlayerEntityMixin
     @Override public void ghostrunner$startDashWindow(int ticks) { ghostrunner$dashWindowTicks = ticks; }
 
     @Override public void ghostrunner$startDashDecay(int ticks) { ghostrunner$dashDecayTicks = ticks; }
+
+    @Override public void ghostrunner$setDashDirection(Vec3d direction) {
+        ghostrunner$dashDirection = (direction == null || direction.lengthSquared() < 1e-6)
+                ? Vec3d.ZERO
+                : direction.normalize();
+    }
+
+    @Override public Vec3d ghostrunner$getDashDirection() { return ghostrunner$dashDirection; }
 
     @Override
     public void ghostrunner$jumpOffWall() {
@@ -142,7 +151,7 @@ public abstract class PlayerEntityMixin
         hunger.setSaturationLevel(20.0F);
         hunger.setExhaustion(0.0F);
 
-        // 子弹时间：只处理耐力和倒计时，速度衰减在 LivingEntityTravelMixin
+        // 子弹时间：只处理耐力和倒计时（速度衰减在 LivingEntityTravelMixin）
         if (ghostrunner$inBulletTime) {
             ghostrunner$btTicks++;
             ghostrunner$consumeStamina(BT_STAMINA_PER_TICK);
@@ -217,12 +226,11 @@ public abstract class PlayerEntityMixin
 
     @Unique
     private void ghostrunner$tryEnterWallRun(PlayerEntity self) {
-        // ============ 冲刺窗口：放宽要求，仍要朝墙 ============
+        // ============ 冲刺窗口：斜撞触发，正撞/擦过不触发 ============
         if (ghostrunner$dashWindowTicks > 0) {
             Direction wall = WallRunHandler.findWall(self);
             if (wall != null
-                    && WallRunHandler.isMovingTowardWall(self, wall,
-                    WallRunHandler.DASH_WINDOW_TOWARD_WALL)) {
+                    && WallRunHandler.isApproachingWallAtAngle(ghostrunner$dashDirection, wall)) {
                 Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
                 if (locked != null) {
                     ghostrunner$wallRunning = true;
@@ -242,7 +250,7 @@ public abstract class PlayerEntityMixin
 
         Direction wall = WallRunHandler.findWall(self);
         if (wall == null) return;
-        if (!WallRunHandler.isMovingTowardWall(self, wall)) return;   // 默认阈值 0.3
+        if (!WallRunHandler.isMovingTowardWall(self, wall)) return;
 
         Vec3d locked = WallRunHandler.computeLockedDirection(self, wall);
         if (locked == null) return;
@@ -348,21 +356,15 @@ public abstract class PlayerEntityMixin
         if (self.isTouchingWater() || self.isInLava()) return false;
         if (self.isFallFlying()) return false;
         if (ghostrunner$stamina < 10.0f) return false;
-
-        // 空中冲刺已用 → 不允许进入
         if (ghostrunner$airDashUsed) return false;
 
         ghostrunner$inBulletTime = true;
         ghostrunner$btTicks = 0;
         ghostrunner$btAim = self.getRotationVec(1.0F).normalize();
-
-        // 消耗空中冲刺
         ghostrunner$airDashUsed = true;
 
         if (self instanceof ServerPlayerEntity sp) {
             BulletTimeManager.enter(sp);
-
-            // 进入音效
             sp.getWorld().playSound(null,
                     sp.getX(), sp.getY(), sp.getZ(),
                     SoundEvents.BLOCK_BEACON_ACTIVATE,
@@ -399,6 +401,13 @@ public abstract class PlayerEntityMixin
         if (dir.lengthSquared() < 0.0001) {
             dir = self.getRotationVec(1.0F).normalize();
         }
+
+        // 记录冲刺方向（用于后续冲刺窗口判定）
+        Vec3d horizDir = new Vec3d(dir.x, 0, dir.z);
+        if (horizDir.lengthSquared() > 1e-6) {
+            ghostrunner$setDashDirection(horizDir.normalize());
+        }
+
         self.setVelocity(
                 dir.x * BT_RELEASE_SPEED,
                 dir.y * BT_RELEASE_SPEED + 0.05,
@@ -410,7 +419,6 @@ public abstract class PlayerEntityMixin
         ghostrunner$startDashWindow(DashHandler.DASH_WALL_WINDOW_TICKS);
 
         if (self instanceof ServerPlayerEntity sp) {
-            // 释放音效
             sp.getWorld().playSound(null,
                     sp.getX(), sp.getY(), sp.getZ(),
                     SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP,
@@ -420,8 +428,7 @@ public abstract class PlayerEntityMixin
             buf.writeBoolean(false);
             ServerPlayNetworking.send(sp, Ghostrunner.BULLET_TIME_STATE_PACKET, buf);
 
-            PacketByteBuf fx = PacketByteBufs.create();
-            ServerPlayNetworking.send(sp, Ghostrunner.DASH_SUCCESS_PACKET, fx);
+            ServerPlayNetworking.send(sp, Ghostrunner.DASH_SUCCESS_PACKET, PacketByteBufs.empty());
         }
     }
 
@@ -432,9 +439,7 @@ public abstract class PlayerEntityMixin
     @Inject(method = "onDeath", at = @At("HEAD"))
     private void ghostrunner$onDeath(DamageSource source, CallbackInfo ci) {
         PlayerEntity self = (PlayerEntity) (Object) this;
-
         ghostrunner$inBulletTime = false;
-
         if (self instanceof ServerPlayerEntity sp) {
             BulletTimeManager.exit(sp);
         }

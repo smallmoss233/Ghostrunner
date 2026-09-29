@@ -20,10 +20,10 @@ public final class WallRunHandler {
     /** 跑墙恒定水平速度（方块/tick） */
     public static final double WALL_RUN_SPEED = 0.30;
 
-    /** 探测墙的距离（从玩家碰撞箱向外扩多少） */
+    /** 探测墙的距离 */
     public static final double WALL_PROBE = 0.15;
 
-    /** 跑墙时抵消重力的量（原版每 tick 重力 = -0.08） */
+    /** 跑墙时抵消重力的量 */
     public static final double GRAVITY_COMPENSATION = 0.08;
 
     /** 跳出时远离墙的横向推力 */
@@ -32,27 +32,34 @@ public final class WallRunHandler {
     /** 跳出时的向上推力 */
     public static final double JUMP_OUT_V = 0.40;
 
-    /** 退出后多少 tick 内不能再进入（防止抖墙） */
+    /** 退出后多少 tick 内不能再进入 */
     public static final int REENTRY_COOLDOWN = 15;
 
-    /** 进入跑墙后至少经过这么多 tick 才允许跳出（防误触） */
+    /** 进入跑墙后至少经过这么多 tick 才允许跳出 */
     public static final int MIN_WALL_RUN_TICKS = 4;
 
     // ================================================================
-    //                          进入条件参数
+    //                          进入条件
     // ================================================================
 
-    /** 进入跑墙所需的最低水平速度（方块/tick） */
+    /** 进入跑墙所需的最低水平速度 */
     public static final double MIN_ENTRY_H_SPEED = 0.04;
 
-    /** 进入跑墙时速度朝墙的最小归一化分量（0~1） */
+    /** 常规跑墙：速度朝墙的最小归一化分量 */
     public static final double MIN_ENTRY_TOWARD_WALL = 0.3;
-
-    /** 冲刺窗口内进入跑墙的朝墙分量阈值（更宽松） */
-    public static final double DASH_WINDOW_TOWARD_WALL = 0.1;
 
     /** 离地后至少经过这么多 tick 才能进入跑墙 */
     public static final int MIN_AIRBORNE_TICKS = 2;
+
+    // ================================================================
+    //                      冲刺窗口判定区间
+    // ================================================================
+
+    /** 低于此值 = 平行擦过，不触发 */
+    public static final double DASH_WINDOW_TOWARD_MIN = 0.15;
+
+    /** 高于此值 = 正面撞墙，不触发 */
+    public static final double DASH_WINDOW_TOWARD_MAX = 0.75;
 
     // ================================================================
     //                          墙面探测
@@ -80,7 +87,7 @@ public final class WallRunHandler {
     }
 
     // ================================================================
-    //                          进入条件
+    //                          条件判定
     // ================================================================
 
     public static boolean canEnter(PlayerEntity player) {
@@ -93,12 +100,10 @@ public final class WallRunHandler {
 
         Vec3d vel = player.getVelocity();
         double hSpeedSq = vel.x * vel.x + vel.z * vel.z;
-        if (hSpeedSq < MIN_ENTRY_H_SPEED * MIN_ENTRY_H_SPEED) return false;
-
-        return true;
+        return hSpeedSq >= MIN_ENTRY_H_SPEED * MIN_ENTRY_H_SPEED;
     }
 
-    /** 玩家脚下是否踩着实心方块（向下探测一小段）。 */
+    /** 玩家脚下是否踩着实心方块。 */
     public static boolean hasGroundBelow(PlayerEntity player) {
         World world = player.getWorld();
         Box box = player.getBoundingBox();
@@ -115,27 +120,32 @@ public final class WallRunHandler {
         return false;
     }
 
-    /**
-     * 检查玩家当前速度是否"朝向墙面"，使用默认阈值 {@link #MIN_ENTRY_TOWARD_WALL}。
-     */
+    /** 计算给定速度在"朝墙"方向上的归一化分量（-1 ~ 1）。 */
+    public static double getTowardWallComponent(Vec3d velocity, Direction wall) {
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed < 1e-6) return 0;
+        double nx = wall.getOffsetX();
+        double nz = wall.getOffsetZ();
+        return (velocity.x * nx + velocity.z * nz) / hSpeed;
+    }
+
+    /** 常规判定：当前速度是否朝墙（默认阈值）。 */
     public static boolean isMovingTowardWall(PlayerEntity player, Direction wall) {
         return isMovingTowardWall(player, wall, MIN_ENTRY_TOWARD_WALL);
     }
 
-    /**
-     * 检查玩家当前速度是否"朝向墙面"，使用自定义阈值。
-     *
-     * @param threshold 归一化朝墙分量（0~1），越大要求越严格
-     */
+    /** 常规判定：当前速度是否朝墙（自定义阈值）。 */
     public static boolean isMovingTowardWall(PlayerEntity player, Direction wall, double threshold) {
-        Vec3d vel = player.getVelocity();
-        double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-        if (hSpeed < 1e-6) return false;
+        return getTowardWallComponent(player.getVelocity(), wall) >= threshold;
+    }
 
-        double nx = wall.getOffsetX();
-        double nz = wall.getOffsetZ();
-        double towardWall = (vel.x * nx + vel.z * nz) / hSpeed;
-        return towardWall >= threshold;
+    /**
+     * 冲刺窗口判定：用记录的冲刺方向，检查是否在"斜撞"区间内。
+     * <p>低于 MIN = 平行擦过；高于 MAX = 正面撞墙。两者都不触发。
+     */
+    public static boolean isApproachingWallAtAngle(Vec3d dashDirection, Direction wall) {
+        double toward = getTowardWallComponent(dashDirection, wall);
+        return toward >= DASH_WINDOW_TOWARD_MIN && toward <= DASH_WINDOW_TOWARD_MAX;
     }
 
     // ================================================================

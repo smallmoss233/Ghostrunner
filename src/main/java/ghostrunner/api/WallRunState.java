@@ -1,11 +1,15 @@
 package ghostrunner.api;
 
+import net.minecraft.util.math.Vec3d;
+
 public interface WallRunState {
     boolean ghostrunner$isWallRunning();
     void ghostrunner$jumpOffWall();
     void ghostrunner$clearWallRunCooldown();
     void ghostrunner$startDashWindow(int ticks);
-
-    /** 开启"冲刺衰减"，让玩家冲刺后快速刹停，消除惯性。 */
     void ghostrunner$startDashDecay(int ticks);
+
+    /** 记录冲刺方向（用于冲刺窗口内判定，不受撞墙影响）。 */
+    void ghostrunner$setDashDirection(Vec3d direction);
+    Vec3d ghostrunner$getDashDirection();
 }
