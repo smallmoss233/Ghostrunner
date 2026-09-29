@@ -27,8 +27,8 @@ public abstract class LivingEntityDamageMixin {
         // 幽灵行者被攻击
         if (self instanceof PlayerEntity victim && GhostrunnerState.isGhostrunner(victim)) {
             // 格挡检查
-            if (BlockHandler.tryBlock(victim)) {
-                return 0;   // 完全格挡
+            if (BlockHandler.tryBlock(victim, source)) {
+                return 0;
             }
             return Float.MAX_VALUE;
         }

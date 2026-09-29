@@ -123,11 +123,12 @@ public final class SwordHandler {
 
             GhostrunnerStamina stamina = (GhostrunnerStamina) targetPlayer;
             if (stamina.ghostrunner$isBlocking() && isFacingAttacker(target, attacker)) {
-                if (BlockHandler.tryBlock(targetPlayer)) {
+                // ★ 传 source（近战攻击源，不是投射物）
+                DamageSource source = attacker.getDamageSources().playerAttack(attacker);
+                if (BlockHandler.tryBlock(targetPlayer, source)) {
                     applyShieldKnockback(attacker, look);
                     return true;
                 }
-                // 耐力不足 → 破防
                 return false;
             }
         }

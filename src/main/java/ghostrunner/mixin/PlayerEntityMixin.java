@@ -69,6 +69,7 @@ public abstract class PlayerEntityMixin
 
     // ============ 格挡 ============
     @Unique private boolean ghostrunner$blocking = false;
+    @Unique private int ghostrunner$blockTicks = 0;
 
     // ================================================================
     //                       WallRunState
@@ -195,6 +196,9 @@ public abstract class PlayerEntityMixin
             ghostrunner$stamina = Math.min(GR_STAMINA_MAX,
                     ghostrunner$stamina + GR_STAMINA_RECOVERY_PER_TICK);
         }
+
+        // 格挡计时
+        if (ghostrunner$blocking) ghostrunner$blockTicks++;
 
         // 重置空中冲刺
         if (self.isOnGround()
@@ -351,7 +355,16 @@ public abstract class PlayerEntityMixin
 
     @Override
     public void ghostrunner$setBlocking(boolean blocking) {
+        if (blocking && !ghostrunner$blocking) {
+            // 从"未格挡 → 格挡"的瞬间，重置计时
+            ghostrunner$blockTicks = 0;
+        }
         ghostrunner$blocking = blocking;
+    }
+
+    @Override
+    public int ghostrunner$getBlockTicks() {
+        return ghostrunner$blockTicks;
     }
 
     // ================================================================
