@@ -2,11 +2,14 @@ package ghostrunner;
 
 import ghostrunner.api.BulletTimeState;
 import ghostrunner.api.GhostrunnerCommand;
+import ghostrunner.api.GhostrunnerStamina;
 import ghostrunner.api.GhostrunnerState;
 import ghostrunner.api.WallRunState;
+import ghostrunner.handler.BlockHandler;
 import ghostrunner.handler.BulletTimeManager;
 import ghostrunner.handler.ClimbHandler;
 import ghostrunner.handler.DashHandler;
+import ghostrunner.handler.ParryHandler;
 import ghostrunner.handler.SwordHandler;
 import ghostrunner.handler.WallRunHandler;
 import ghostrunner.item.GRItems;
@@ -21,6 +24,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemGroups;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
@@ -32,19 +36,22 @@ public class Ghostrunner implements ModInitializer {
 
     // ============ 网络包 ============
     // C2S
-    public static final Identifier JUMP_OFF_WALL_PACKET   = id("jump_off_wall");
-    public static final Identifier DASH_PACKET            = id("dash");
-    public static final Identifier DASH_CHARGE_START_PACKET   = id("dash_charge_start");
-    public static final Identifier DASH_CHARGE_AIM_PACKET     = id("dash_charge_aim");
-    public static final Identifier DASH_CHARGE_RELEASE_PACKET = id("dash_charge_release");
-    public static final Identifier ATTACK_PACKET          = id("attack");
+    public static final Identifier JUMP_OFF_WALL_PACKET        = id("jump_off_wall");
+    public static final Identifier DASH_PACKET                 = id("dash");
+    public static final Identifier DASH_CHARGE_START_PACKET    = id("dash_charge_start");
+    public static final Identifier DASH_CHARGE_AIM_PACKET      = id("dash_charge_aim");
+    public static final Identifier DASH_CHARGE_RELEASE_PACKET  = id("dash_charge_release");
+    public static final Identifier ATTACK_PACKET               = id("attack");
+    public static final Identifier BLOCK_START_PACKET          = id("block_start");
+    public static final Identifier BLOCK_STOP_PACKET           = id("block_stop");
+    public static final Identifier PARRY_SUCCESS_PACKET = id("parry_success");
 
     // S2C
-    public static final Identifier WALL_RUN_STATE_PACKET  = id("wall_run_state");
-    public static final Identifier ASCENDED_STATE_PACKET  = id("ascended_state");
+    public static final Identifier WALL_RUN_STATE_PACKET    = id("wall_run_state");
+    public static final Identifier ASCENDED_STATE_PACKET    = id("ascended_state");
     public static final Identifier BULLET_TIME_STATE_PACKET = id("bullet_time_state");
-    public static final Identifier DASH_SUCCESS_PACKET    = id("dash_success");
-    public static final Identifier STAMINA_PACKET         = id("stamina");
+    public static final Identifier DASH_SUCCESS_PACKET      = id("dash_success");
+    public static final Identifier STAMINA_PACKET           = id("stamina");
 
     private static Identifier id(String path) {
         return new Identifier(MOD_ID, path);
@@ -84,7 +91,7 @@ public class Ghostrunner implements ModInitializer {
                     ClimbHandler.tryClimb(player);
                 }));
 
-        // 短按冲刺（地面 / 短按）
+        // 短按冲刺（地面）
         ServerPlayNetworking.registerGlobalReceiver(DASH_PACKET,
                 (server, player, handler, buf, responseSender) -> {
                     boolean f = buf.readBoolean();
@@ -147,11 +154,32 @@ public class Ghostrunner implements ModInitializer {
                     }
                 }));
 
-        // 挥砍
+        // 挥砍 / 弹反
         ServerPlayNetworking.registerGlobalReceiver(ATTACK_PACKET,
                 (server, player, handler, buf, responseSender) -> server.execute(() -> {
                     if (!GhostrunnerState.isGhostrunner(player)) return;
+
+                    // 先尝试弹反，成功就跳过挥砍
+                    if (ParryHandler.tryParry(player)) return;
+
                     SwordHandler.performSwing(player);
+                }));
+
+        // 格挡开始
+        ServerPlayNetworking.registerGlobalReceiver(BLOCK_START_PACKET,
+                (server, player, handler, buf, responseSender) -> server.execute(() -> {
+                    if (!GhostrunnerState.isGhostrunner(player)) return;
+                    if (!player.getMainHandStack().isIn(ItemTags.SWORDS)) return;
+
+                    GhostrunnerStamina stamina = (GhostrunnerStamina) player;
+                    stamina.ghostrunner$setBlocking(true);
+                }));
+
+        // 格挡结束
+        ServerPlayNetworking.registerGlobalReceiver(BLOCK_STOP_PACKET,
+                (server, player, handler, buf, responseSender) -> server.execute(() -> {
+                    GhostrunnerStamina stamina = (GhostrunnerStamina) player;
+                    stamina.ghostrunner$setBlocking(false);
                 }));
     }
 
@@ -165,6 +193,7 @@ public class Ghostrunner implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             DashHandler.tickCooldowns();
             ClimbHandler.tickCooldowns();
+            ParryHandler.tickCooldowns();
         });
 
         // 玩家加载 → 同步标记
@@ -184,16 +213,18 @@ public class Ghostrunner implements ModInitializer {
             GhostrunnerState.GhostrunnerStateAccessor newA =
                     (GhostrunnerState.GhostrunnerStateAccessor) newPlayer;
             newA.ghostrunner$setAscended(oldA.ghostrunner$isAscended());
+            BlockHandler.forceCancel(newPlayer);
         });
 
         // 玩家断开 → 清理子弹时间
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 BulletTimeManager.exit(handler.getPlayer()));
 
-        // 玩家从世界卸载 → 清理
+        // 玩家从世界卸载 → 清理 + 取消格挡
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> {
             if (entity instanceof ServerPlayerEntity sp) {
                 BulletTimeManager.exit(sp);
+                BlockHandler.forceCancel(sp);
             }
         });
     }

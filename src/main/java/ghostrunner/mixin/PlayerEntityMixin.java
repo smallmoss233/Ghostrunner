@@ -67,6 +67,9 @@ public abstract class PlayerEntityMixin
     @Unique private Vec3d   ghostrunner$btAim = Vec3d.ZERO;
     @Unique private int     ghostrunner$btTicks = 0;
 
+    // ============ 格挡 ============
+    @Unique private boolean ghostrunner$blocking = false;
+
     // ================================================================
     //                       WallRunState
     // ================================================================
@@ -188,7 +191,7 @@ public abstract class PlayerEntityMixin
         ghostrunner$syncState();
 
         // 恢复耐力
-        if (ghostrunner$stamina < GR_STAMINA_MAX) {
+        if (!ghostrunner$blocking && ghostrunner$stamina < GR_STAMINA_MAX) {
             ghostrunner$stamina = Math.min(GR_STAMINA_MAX,
                     ghostrunner$stamina + GR_STAMINA_RECOVERY_PER_TICK);
         }
@@ -341,6 +344,16 @@ public abstract class PlayerEntityMixin
 
     @Override public void ghostrunner$setAirDashUsed(boolean used) { ghostrunner$airDashUsed = used; }
 
+    @Override
+    public boolean ghostrunner$isBlocking() {
+        return ghostrunner$blocking;
+    }
+
+    @Override
+    public void ghostrunner$setBlocking(boolean blocking) {
+        ghostrunner$blocking = blocking;
+    }
+
     // ================================================================
     //                    BulletTimeState
     // ================================================================
@@ -440,6 +453,7 @@ public abstract class PlayerEntityMixin
     private void ghostrunner$onDeath(DamageSource source, CallbackInfo ci) {
         PlayerEntity self = (PlayerEntity) (Object) this;
         ghostrunner$inBulletTime = false;
+        ghostrunner$blocking = false;
         if (self instanceof ServerPlayerEntity sp) {
             BulletTimeManager.exit(sp);
         }

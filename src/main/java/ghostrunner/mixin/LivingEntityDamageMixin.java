@@ -1,6 +1,7 @@
 package ghostrunner.mixin;
 
 import ghostrunner.api.GhostrunnerState;
+import ghostrunner.handler.BlockHandler;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.player.PlayerEntity;
@@ -11,11 +12,6 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityDamageMixin {
 
-    /**
-     * 一击必杀：
-     *  - 幽灵行者玩家受到任何伤害 → 伤害放大到必死
-     *  - 幽灵行者玩家攻击任何生物 → 伤害放大到必死
-     */
     @ModifyVariable(
             method = "damage",
             at = @At("HEAD"),
@@ -24,16 +20,20 @@ public abstract class LivingEntityDamageMixin {
     )
     private float ghostrunner$amplifyDamage(float amount, DamageSource source) {
         if (amount <= 0) return amount;
-        if (amount == Float.MAX_VALUE) return amount; // 已经致命
+        if (amount == Float.MAX_VALUE) return amount;
 
         LivingEntity self = (LivingEntity) (Object) this;
 
-        // 幽灵行者玩家被攻击
+        // 幽灵行者被攻击
         if (self instanceof PlayerEntity victim && GhostrunnerState.isGhostrunner(victim)) {
+            // 格挡检查
+            if (BlockHandler.tryBlock(victim)) {
+                return 0;   // 完全格挡
+            }
             return Float.MAX_VALUE;
         }
 
-        // 幽灵行者玩家攻击别人
+        // 幽灵行者攻击别人
         if (source.getAttacker() instanceof PlayerEntity attacker
                 && GhostrunnerState.isGhostrunner(attacker)) {
             return Float.MAX_VALUE;

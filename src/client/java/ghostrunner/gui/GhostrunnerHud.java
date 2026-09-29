@@ -102,6 +102,23 @@ public final class GhostrunnerHud {
 
             ctx.fill(0, 0, w, h, color);
         });
+
+        // ---- 弹反闪光 ----
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player == null || client.options.hudHidden) return;
+            if (!GhostrunnerState.isGhostrunner(client.player)) return;
+
+            float a = GhostrunnerClient.parryFlashAlpha;
+            if (a <= 0.01f) return;
+
+            int w = ctx.getScaledWindowWidth();
+            int h = ctx.getScaledWindowHeight();
+
+            // 白色/青色闪光
+            int alpha = (int) (a * 0x50);
+            ctx.fill(0, 0, w, h, (alpha << 24) | 0x00E0FFFF);
+        });
     }
 
     // ================================================================

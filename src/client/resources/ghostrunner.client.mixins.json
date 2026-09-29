@@ -6,7 +6,8 @@
       "DeathScreenMixin",
       "GameRendererMixin",
       "InGameHudMixin",
-      "ScreenMixin"
+      "ScreenMixin",
+      "HeldItemRendererMixin"
     ],
 	"injectors": {
 		"defaultRequire": 1

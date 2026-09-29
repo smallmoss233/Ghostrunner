@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 
 public class GhostrunnerClient implements ClientModInitializer {
@@ -37,16 +38,25 @@ public class GhostrunnerClient implements ClientModInitializer {
     // ============ 子弹时间 ============
     public static boolean inBulletTime = false;
 
-    // ============ 按键状态缓存 ============
+    // ============ 按键状态 ============
     private static boolean prevJumpPressed = false;
     private static boolean prevSprintPressed = false;
     private static boolean prevAttackPressed = false;
+    private static boolean prevRightPressed = false;
     private static boolean prevF = false, prevB = false, prevL = false, prevR = false;
 
     // ============ 蓄力 ============
     private static int chargeHoldTicks = 0;
     private static boolean chargeStarted = false;
-    private static final int CHARGE_THRESHOLD = 4;   // 0.2 秒
+    private static final int CHARGE_THRESHOLD = 4;
+
+    /** 弹反举剑姿势剩余 tick 数 */
+    public static int parryPoseTicks = 0;
+    /** 弹反姿势总时长（tick）。6 = 0.3 秒 */
+    public static final int PARRY_POSE_DURATION = 6;
+
+    /** 弹反闪光透明度（0~1） */
+    public static float parryFlashAlpha = 0.0f;
 
     @Override
     public void onInitializeClient() {
@@ -65,7 +75,6 @@ public class GhostrunnerClient implements ClientModInitializer {
 
     private void registerReceivers() {
 
-        // 跑墙状态
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.WALL_RUN_STATE_PACKET,
                 (client, handler, buf, sender) -> {
                     boolean running = buf.readBoolean();
@@ -76,7 +85,6 @@ public class GhostrunnerClient implements ClientModInitializer {
                     });
                 });
 
-        // 幽灵行者标记
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.ASCENDED_STATE_PACKET,
                 (client, handler, buf, sender) -> {
                     boolean ascended = buf.readBoolean();
@@ -88,33 +96,35 @@ public class GhostrunnerClient implements ClientModInitializer {
                     });
                 });
 
-        // 耐力
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.STAMINA_PACKET,
                 (client, handler, buf, sender) -> {
                     float value = buf.readFloat();
                     client.execute(() -> currentStamina = value);
                 });
 
-        // 冲刺特效
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.DASH_SUCCESS_PACKET,
                 (client, handler, buf, sender) -> client.execute(() -> {
                     dashEffectTicks = DASH_EFFECT_DURATION;
                     dashEffectSeed = System.nanoTime();
                 }));
 
-        // 子弹时间状态
         ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.BULLET_TIME_STATE_PACKET,
                 (client, handler, buf, sender) -> {
                     boolean in = buf.readBoolean();
                     client.execute(() -> {
                         inBulletTime = in;
-                        // 服务端结束子弹时间 → 清掉客户端蓄力标记
                         if (!in) {
                             chargeStarted = false;
                             chargeHoldTicks = 0;
                         }
                     });
                 });
+
+        ClientPlayNetworking.registerGlobalReceiver(Ghostrunner.PARRY_SUCCESS_PACKET,
+                (client, handler, buf, sender) -> client.execute(() -> {
+                    parryPoseTicks = PARRY_POSE_DURATION;
+                    parryFlashAlpha = 1.0f;
+                }));
     }
 
     // ================================================================
@@ -136,18 +146,30 @@ public class GhostrunnerClient implements ClientModInitializer {
         }
         prevJumpPressed = jumpPressed;
 
+        boolean isSword = client.player.getMainHandStack().isIn(ItemTags.SWORDS);
+
         // ---------- 攻击键 ----------
         boolean attackPressed = client.options.attackKey.isPressed();
-        if (attackPressed && !prevAttackPressed) {
-            // 只处理剑类武器；其他物品走原版逻辑
-            if (client.player.getMainHandStack().isIn(ItemTags.SWORDS)) {
-                ClientPlayNetworking.send(Ghostrunner.ATTACK_PACKET,
-                        PacketByteBufs.empty());
-            }
+        if (attackPressed && !prevAttackPressed && isSword) {
+            ClientPlayNetworking.send(Ghostrunner.ATTACK_PACKET, PacketByteBufs.empty());
         }
         prevAttackPressed = attackPressed;
 
-        // ---------- 冲刺键（长按蓄力） ----------
+        // ---------- 右键格挡 ----------
+        boolean rightPressed = client.options.useKey.isPressed();
+
+        if (rightPressed && !prevRightPressed && isSword) {
+            // 按下 + 持剑 → 开始格挡
+            ClientPlayNetworking.send(Ghostrunner.BLOCK_START_PACKET,
+                    PacketByteBufs.empty());
+        } else if (prevRightPressed && (!rightPressed || !isSword)) {
+            // 松开 或 切掉剑 → 停止格挡
+            ClientPlayNetworking.send(Ghostrunner.BLOCK_STOP_PACKET,
+                    PacketByteBufs.empty());
+        }
+        prevRightPressed = rightPressed;
+
+        // ---------- 冲刺键 ----------
         handleSprint(client);
 
         // ---------- 相机倾斜 + 冲刺特效 ----------
@@ -155,8 +177,17 @@ public class GhostrunnerClient implements ClientModInitializer {
         currentRoll += (targetRoll - currentRoll) * ROLL_LERP;
         if (dashEffectTicks > 0) dashEffectTicks--;
 
-        // ---------- HUD 透明度插值 ----------
+        // ---------- HUD 透明度 ----------
         updateHudAlphas();
+
+        // 弹反姿势倒计时
+        if (parryPoseTicks > 0) parryPoseTicks--;
+
+        // 弹反闪光衰减
+        if (parryFlashAlpha > 0.0f) {
+            parryFlashAlpha -= 0.15f;
+            if (parryFlashAlpha < 0.0f) parryFlashAlpha = 0.0f;
+        }
     }
 
     // ================================================================
@@ -173,33 +204,26 @@ public class GhostrunnerClient implements ClientModInitializer {
 
         if (sprintPressed) {
             if (prevSprintPressed) {
-                // 持续按住
                 chargeHoldTicks++;
 
                 if (!chargeStarted && chargeHoldTicks >= CHARGE_THRESHOLD) {
-                    // 达到阈值 → 发 START
                     sendDashBuf(Ghostrunner.DASH_CHARGE_START_PACKET, f, b, l, r);
                     chargeStarted = true;
                 } else if (chargeStarted && inBulletTime) {
-                    // 子弹时间中方向变化 → 更新瞄准
                     if (f != prevF || b != prevB || l != prevL || r != prevR) {
                         sendDashBuf(Ghostrunner.DASH_CHARGE_AIM_PACKET, f, b, l, r);
                     }
                 }
             } else {
-                // 刚按下
                 chargeHoldTicks = 0;
                 chargeStarted = false;
             }
         } else {
             if (prevSprintPressed) {
-                // 刚松开
                 if (chargeStarted && inBulletTime) {
-                    // 子弹时间激活 → 释放冲刺
                     ClientPlayNetworking.send(Ghostrunner.DASH_CHARGE_RELEASE_PACKET,
                             PacketByteBufs.empty());
                 } else {
-                    // 未激活 → 普通冲刺（含 START 失败 fallback）
                     sendDashBuf(Ghostrunner.DASH_PACKET, f, b, l, r);
                 }
                 chargeHoldTicks = 0;
@@ -211,7 +235,7 @@ public class GhostrunnerClient implements ClientModInitializer {
         prevF = f; prevB = b; prevL = l; prevR = r;
     }
 
-    private static void sendDashBuf(net.minecraft.util.Identifier packetId,
+    private static void sendDashBuf(Identifier packetId,
                                     boolean f, boolean b, boolean l, boolean r) {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeBoolean(f);
@@ -226,14 +250,12 @@ public class GhostrunnerClient implements ClientModInitializer {
     // ================================================================
 
     private static void updateHudAlphas() {
-        // 子弹时间滤镜
         float bulletTarget = inBulletTime ? 1.0f : 0.0f;
         bulletTimeFilterAlpha += (bulletTarget - bulletTimeFilterAlpha) * 0.20f;
         if (Math.abs(bulletTimeFilterAlpha - bulletTarget) < 0.005f) {
             bulletTimeFilterAlpha = bulletTarget;
         }
 
-        // 耐力条（满耐力时淡出）
         boolean showStamina = currentStamina < STAMINA_MAX - 0.5f;
         float staminaTarget = showStamina ? 1.0f : 0.0f;
         staminaBarAlpha += (staminaTarget - staminaBarAlpha) * 0.25f;
@@ -250,6 +272,7 @@ public class GhostrunnerClient implements ClientModInitializer {
         prevJumpPressed = false;
         prevSprintPressed = false;
         prevAttackPressed = false;
+        prevRightPressed = false;
         prevF = prevB = prevL = prevR = false;
         chargeHoldTicks = 0;
         chargeStarted = false;
