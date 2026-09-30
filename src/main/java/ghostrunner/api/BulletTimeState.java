@@ -1,6 +1,6 @@
 package ghostrunner.api;
 
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public interface BulletTimeState {
 
@@ -13,8 +13,8 @@ public interface BulletTimeState {
     void ghostrunner$exitBulletTimeAndDash();
 
     /** 更新瞄准方向（由客户端 WASD 决定）。 */
-    void ghostrunner$updateBulletTimeAim(Vec3d direction);
+    void ghostrunner$updateBulletTimeAim(Vec3 direction);
 
     /** 当前瞄准方向。 */
-    Vec3d ghostrunner$getBulletTimeAim();
+    Vec3 ghostrunner$getBulletTimeAim();
 }

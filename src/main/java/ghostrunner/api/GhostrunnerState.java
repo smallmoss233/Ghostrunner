@@ -1,13 +1,13 @@
 package ghostrunner.api;
 
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.world.entity.player.Player;
 
 public final class GhostrunnerState {
 
     private GhostrunnerState() {}
 
     /** 玩家是否已被改造成幽灵行者。 */
-    public static boolean isGhostrunner(PlayerEntity player) {
+    public static boolean isGhostrunner(Player player) {
         return player instanceof GhostrunnerStateAccessor a && a.ghostrunner$isAscended();
     }
 

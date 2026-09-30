@@ -2,18 +2,21 @@ package ghostrunner.handler;
 
 import ghostrunner.api.GhostrunnerStamina;
 import ghostrunner.api.GhostrunnerState;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -23,7 +26,6 @@ public final class SwordHandler {
 
     // ============ 参数 ============
     public static final float BASE_DAMAGE = 10.0f;
-
     public static final double SHIELD_KNOCKBACK = 0.55;
     public static final double SHIELD_KNOCKBACK_UP = 0.30;
 
@@ -36,61 +38,60 @@ public final class SwordHandler {
 
     // ================================================================
 
-    public static void performSwing(ServerPlayerEntity player) {
-        ItemStack mainHand = player.getMainHandStack();
-        if (!mainHand.isIn(ItemTags.SWORDS)) return;
+    public static void performSwing(ServerPlayer player) {
+        ItemStack mainHand = player.getMainHandItem();
+        if (!mainHand.is(ItemTags.SWORDS)) return;
 
-        ServerWorld world = (ServerWorld) player.getWorld();
-        Vec3d eyePos = player.getEyePos();
-        Vec3d look = player.getRotationVec(1.0F).normalize();
+        ServerLevel level = (ServerLevel) player.level();
+        Vec3 eyePos = player.getEyePosition();
+        Vec3 look = player.getViewVector(1.0F).normalize();
 
-        // 视线相对坐标系
-        Vec3d worldUp = new Vec3d(0, 1, 0);
-        Vec3d right = look.crossProduct(worldUp);
-        if (right.lengthSquared() < 1e-4) {
-            right = new Vec3d(-1, 0, 0);
+        Vec3 worldUp = new Vec3(0, 1, 0);
+        Vec3 right = look.cross(worldUp);
+        if (right.lengthSqr() < 1e-4) {
+            right = new Vec3(-1, 0, 0);
         }
         right = right.normalize();
-        Vec3d up = right.crossProduct(look).normalize();
+        Vec3 up = right.cross(look).normalize();
 
-        Box searchBox = player.getBoundingBox().expand(4.0, 3.0, 4.0);
-        List<Entity> candidates = world.getOtherEntities(player, searchBox);
+        AABB searchBox = player.getBoundingBox().inflate(4.0, 3.0, 4.0);
+        List<Entity> candidates = level.getEntities(player, searchBox);
 
         boolean anyHit = false;
 
         for (Entity entity : candidates) {
             if (!(entity instanceof LivingEntity living)) continue;
-            if (living.isDead()) continue;
+            if (living.isDeadOrDying()) continue;
             if (!GhostrunnerState.isGhostrunner(player)) continue;
 
-            Vec3d closest = closestPointOnBox(living.getBoundingBox(), eyePos);
-            Vec3d toEntity = closest.subtract(eyePos);
+            Vec3 closest = closestPointOnBox(living.getBoundingBox(), eyePos);
+            Vec3 toEntity = closest.subtract(eyePos);
 
-            double fwd  = toEntity.dotProduct(look);
-            double side = toEntity.dotProduct(right);
-            double vert = toEntity.dotProduct(up);
+            double fwd  = toEntity.dot(look);
+            double side = toEntity.dot(right);
+            double vert = toEntity.dot(up);
 
             if (fwd  < RANGE_FORWARD_MIN || fwd  > RANGE_FORWARD_MAX) continue;
             if (Math.abs(side) > RANGE_SIDE) continue;
             if (vert < RANGE_VERT_MIN || vert > RANGE_VERT_MAX) continue;
 
-            // ★ 格挡判定（含 GR 格挡 + 原版盾牌）
             if (!canBypassShield(player, living)
                     && tryBlockedByTarget(player, living, look)) {
-                continue;   // 已被挡下，跳过伤害
+                continue;
             }
 
-            DamageSource source = player.getDamageSources().playerAttack(player);
-            if (living.damage(source, BASE_DAMAGE)) {
+            DamageSource source = player.damageSources().playerAttack(player);
+            // ★ 修正 1: 使用 hurtServer(ServerLevel, DamageSource, float)
+            if (living.hurtServer(level, source, BASE_DAMAGE)) {
                 anyHit = true;
             }
         }
 
         if (anyHit) {
-            world.playSound(null,
+            level.playSound(null,
                     player.getX(), player.getY(), player.getZ(),
-                    SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP,
-                    SoundCategory.PLAYERS, 0.8f, 1.0f);
+                    SoundEvents.PLAYER_ATTACK_SWEEP,
+                    SoundSource.PLAYERS, 0.8f, 1.0f);
         }
     }
 
@@ -98,33 +99,26 @@ public final class SwordHandler {
     //                          工具方法
     // ================================================================
 
-    /** 点在 AABB 上的最近点。 */
-    private static Vec3d closestPointOnBox(Box box, Vec3d point) {
+    private static Vec3 closestPointOnBox(AABB box, Vec3 point) {
         double x = Math.max(box.minX, Math.min(point.x, box.maxX));
         double y = Math.max(box.minY, Math.min(point.y, box.maxY));
         double z = Math.max(box.minZ, Math.min(point.z, box.maxZ));
-        return new Vec3d(x, y, z);
+        return new Vec3(x, y, z);
     }
 
     // ================================================================
     //                          格挡判定
     // ================================================================
 
-    /**
-     * 判断目标是否挡下攻击。同时处理原版盾牌和 GR 格挡。
-     * <p>GR 格挡命中时**消耗目标耐力**并弹开攻击者。
-     */
-    private static boolean tryBlockedByTarget(ServerPlayerEntity attacker,
+    private static boolean tryBlockedByTarget(ServerPlayer attacker,
                                               LivingEntity target,
-                                              Vec3d look) {
-        // ============ GR 格挡 ============
-        if (target instanceof PlayerEntity targetPlayer
+                                              Vec3 look) {
+        if (target instanceof Player targetPlayer
                 && GhostrunnerState.isGhostrunner(targetPlayer)) {
 
             GhostrunnerStamina stamina = (GhostrunnerStamina) targetPlayer;
             if (stamina.ghostrunner$isBlocking() && isFacingAttacker(target, attacker)) {
-                // ★ 传 source（近战攻击源，不是投射物）
-                DamageSource source = attacker.getDamageSources().playerAttack(attacker);
+                DamageSource source = attacker.damageSources().playerAttack(attacker);
                 if (BlockHandler.tryBlock(targetPlayer, source)) {
                     applyShieldKnockback(attacker, look);
                     return true;
@@ -133,7 +127,6 @@ public final class SwordHandler {
             }
         }
 
-        // ============ 原版盾牌 ============
         if (target.isBlocking() && isFacingAttacker(target, attacker)) {
             applyShieldKnockback(attacker, look);
             return true;
@@ -142,18 +135,13 @@ public final class SwordHandler {
         return false;
     }
 
-    /** 目标是否面向攻击者。 */
-    private static boolean isFacingAttacker(LivingEntity target, ServerPlayerEntity attacker) {
-        Vec3d toAttacker = attacker.getPos().subtract(target.getPos()).normalize();
-        Vec3d targetLook = target.getRotationVec(1.0F);
+    private static boolean isFacingAttacker(LivingEntity target, ServerPlayer attacker) {
+        Vec3 toAttacker = attacker.position().subtract(target.position()).normalize();
+        Vec3 targetLook = target.getViewVector(1.0F);
         return targetLook.x * toAttacker.x + targetLook.z * toAttacker.z > 0.0;
     }
 
-    /**
-     * 拓展接口：返回 true 时无视盾牌/格挡直接造成伤害。
-     * <p>当前永远返回 false。未来"锋利刀刃"升级可覆盖此方法。
-     */
-    private static boolean canBypassShield(ServerPlayerEntity player, LivingEntity target) {
+    private static boolean canBypassShield(ServerPlayer player, LivingEntity target) {
         return false;
     }
 
@@ -161,23 +149,33 @@ public final class SwordHandler {
     //                          弹开
     // ================================================================
 
-    private static void applyShieldKnockback(ServerPlayerEntity player, Vec3d look) {
-        Vec3d horiz = new Vec3d(look.x, 0, look.z);
-        if (horiz.lengthSquared() < 1e-4) {
-            horiz = new Vec3d(0, 0, 1);
+    private static void applyShieldKnockback(ServerPlayer player, Vec3 look) {
+        Vec3 horiz = new Vec3(look.x, 0, look.z);
+        if (horiz.lengthSqr() < 1e-4) {
+            horiz = new Vec3(0, 0, 1);
         }
         horiz = horiz.normalize();
 
-        player.setVelocity(
+        player.setDeltaMovement(
                 -horiz.x * SHIELD_KNOCKBACK,
                 SHIELD_KNOCKBACK_UP,
                 -horiz.z * SHIELD_KNOCKBACK);
-        player.velocityModified = true;
+
+        // ★ 修正 2: Fabric 环境下广播原版运动数据包
+        ServerLevel level = (ServerLevel) player.level();
+        ClientboundSetEntityMotionPacket motionPacket = new ClientboundSetEntityMotionPacket(player);
+
+        for (ServerPlayer trackingPlayer : PlayerLookup.tracking(player)) {
+            if (trackingPlayer != player) {
+                trackingPlayer.connection.send(motionPacket);
+            }
+        }
+
         player.fallDistance = 0;
 
-        player.getWorld().playSound(null,
+        level.playSound(null,
                 player.getX(), player.getY(), player.getZ(),
-                SoundEvents.ITEM_SHIELD_BLOCK,
-                SoundCategory.PLAYERS, 1.0f, 1.0f);
+                SoundEvents.SHIELD_BLOCK,
+                SoundSource.PLAYERS, 1.0f, 1.0f);
     }
 }

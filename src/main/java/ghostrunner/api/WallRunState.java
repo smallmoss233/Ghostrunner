@@ -1,6 +1,6 @@
 package ghostrunner.api;
 
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public interface WallRunState {
     boolean ghostrunner$isWallRunning();
@@ -10,6 +10,6 @@ public interface WallRunState {
     void ghostrunner$startDashDecay(int ticks);
 
     /** 记录冲刺方向（用于冲刺窗口内判定，不受撞墙影响）。 */
-    void ghostrunner$setDashDirection(Vec3d direction);
-    Vec3d ghostrunner$getDashDirection();
+    void ghostrunner$setDashDirection(Vec3 direction);
+    Vec3 ghostrunner$getDashDirection();
 }

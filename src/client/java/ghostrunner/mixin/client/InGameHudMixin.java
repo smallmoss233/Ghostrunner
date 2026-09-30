@@ -1,30 +1,56 @@
 package ghostrunner.mixin.client;
 
 import ghostrunner.api.GhostrunnerState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.hud.InGameHud;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.Hud;
+import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(InGameHud.class)
+@Mixin(Hud.class)
 public abstract class InGameHudMixin {
 
-    /** 幽灵行者不显示任何状态条（血/食/甲/氧）。 */
-    @Inject(method = "renderStatusBars", at = @At("HEAD"), cancellable = true)
-    private void ghostrunner$hideStatusBars(CallbackInfo ci) {
-        PlayerEntity player = MinecraftClient.getInstance().player;
+    /** 隐藏血量（护甲和食物也一并隐藏，因为它们从本方法内部调用） */
+    @Inject(method = "extractPlayerHealth", at = @At("HEAD"), cancellable = true)
+    private void ghostrunner$hideHealth(GuiGraphicsExtractor graphics, CallbackInfo ci) {
+        Player player = Minecraft.getInstance().player;
         if (player != null && GhostrunnerState.isGhostrunner(player)) {
             ci.cancel();
         }
     }
 
-    @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
-    private void ghostrunner$hideVanillaCrosshair(DrawContext ctx, CallbackInfo ci) {
-        PlayerEntity player = MinecraftClient.getInstance().player;
+    /** 隐藏护甲（static 方法，注入器必须也是 static） */
+    @Inject(method = "extractArmor", at = @At("HEAD"), cancellable = true)
+    private static void ghostrunner$hideArmor(GuiGraphicsExtractor graphics, Player player,
+                                              int yLineBase, int numHealthRows,
+                                              int healthRowHeight, int xLeft,
+                                              CallbackInfo ci) {
+        Player localPlayer = Minecraft.getInstance().player;
+        if (localPlayer != null && GhostrunnerState.isGhostrunner(localPlayer)) {
+            ci.cancel();
+        }
+    }
+
+    /** 隐藏食物 */
+    @Inject(method = "extractFood", at = @At("HEAD"), cancellable = true)
+    private void ghostrunner$hideFood(GuiGraphicsExtractor graphics, Player player,
+                                      int yLineBase, int xRight, CallbackInfo ci) {
+        Player localPlayer = Minecraft.getInstance().player;
+        if (localPlayer != null && GhostrunnerState.isGhostrunner(localPlayer)) {
+            ci.cancel();
+        }
+    }
+
+    /** 隐藏原版准星 */
+    @Inject(method = "extractCrosshair", at = @At("HEAD"), cancellable = true)
+    private void ghostrunner$hideVanillaCrosshair(GuiGraphicsExtractor graphics,
+                                                  DeltaTracker deltaTracker,
+                                                  CallbackInfo ci) {
+        Player player = Minecraft.getInstance().player;
         if (player != null && GhostrunnerState.isGhostrunner(player)) {
             ci.cancel();
         }

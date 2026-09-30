@@ -1,22 +1,28 @@
 package ghostrunner;
 
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
 
 public final class GhostrunnerKeys {
 
     private GhostrunnerKeys() {}
 
-    public static KeyBinding RESPAWN;
+    public static KeyMapping RESPAWN;
 
     public static void register() {
-        RESPAWN = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        // 定义按键分类
+        KeyMapping.Category CATEGORY = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath("ghostrunner", "general")
+        );
+
+        // 注册按键映射
+        RESPAWN = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.ghostrunner.respawn",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_R,
-                "category.ghostrunner"
+                InputConstants.Type.KEYBOARD,   // ★ KEYSYM → KEYBOARD
+                InputConstants.KEY_R,           // = 21（SDL scancode），值本身没变
+                CATEGORY
         ));
     }
 }

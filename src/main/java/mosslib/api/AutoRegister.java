@@ -1,14 +1,16 @@
 package mosslib.api;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.EntityType;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
+import mosslib.MossLib;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -17,149 +19,183 @@ import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.IdentityHashMap;
+import java.util.Map;
+import java.util.function.Function;
 
-/**
- * 基于「字段名 = 注册 ID」约定的自动注册工具。
- *
- * <p>支持：物品、方块（可选自带 BlockItem）、方块实体、实体。
- *
- * <p>使用示例：
- * <pre>{@code
- * public class ModBlocks {
- *     public static final Block FOO = new Block(...);
- *
- *     @AutoRegister.NoItem  // 不生成 BlockItem
- *     public static final Block BAR = new Block(...);
- *
- *     @AutoRegister.Id("custom_id")  // 自定义注册 ID
- *     public static final Block BAZ = new Block(...);
- *
- *     public static void register() {
- *         AutoRegister.blocksWithItems(ModBlocks.class, "doctor_m");
- *     }
- * }
- * }</pre>
- */
 public final class AutoRegister {
 
     private AutoRegister() {}
 
     // ==================== 注解 ====================
 
-    /** 标记在 Block 字段上：只注册方块，不生成对应的 BlockItem。 */
+    /** 标记在 Block 字段上：注册 Block 但不自动创建 BlockItem。 */
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.FIELD)
     public @interface NoItem {}
 
-    /** 显式指定注册 ID，覆盖默认的 field.getName().toLowerCase()。 */
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target(ElementType.FIELD)
-    public @interface Id {
-        String value();
+    // ==================== ID 追踪 ====================
+
+    /** object -> Identifier 映射，用于扫描时反查 id。 */
+    private static final Map<Object, Identifier> ID_BY_OBJECT = new IdentityHashMap<>();
+
+    // ==================== 工厂方法（26.3 必须在构造前 setId） ====================
+
+    /**
+     * 创建一个带注册 id 的 Item。
+     * <p>26.3 起 {@link Item.Properties} 必须在构造前通过 {@code setId} 声明注册键，
+     * 否则会抛 {@code NullPointerException: Item id not set}。
+     *
+     * @param modId   命名空间，如 {@code Ghostrunner.MOD_ID}
+     * @param id      路径，如 {@code "ghostrunner_tag"}
+     * @param factory 接收已经带 id 的 {@link Item.Properties}，返回具体 Item 实例
+     */
+    public static Item item(String modId, String id, Function<Item.Properties, Item> factory) {
+        Identifier ident = Identifier.fromNamespaceAndPath(modId, id);
+        ResourceKey<Item> key = ResourceKey.create(Registries.ITEM, ident);
+        Item item = factory.apply(new Item.Properties().setId(key));
+        ID_BY_OBJECT.put(item, ident);
+        return item;
+    }
+
+    /** 创建一个带注册 id 的 Block。 */
+    public static Block block(String modId, String id, Function<Block.Properties, Block> factory) {
+        Identifier ident = Identifier.fromNamespaceAndPath(modId, id);
+        ResourceKey<Block> key = ResourceKey.create(Registries.BLOCK, ident);
+        Block block = factory.apply(Block.Properties.of().setId(key));
+        ID_BY_OBJECT.put(block, ident);
+        return block;
+    }
+
+    /**
+     * 为已构造的 {@link EntityType} 登记 id。
+     * <p>{@code EntityType.Builder#build(ResourceKey)} 已经处理了 setId，
+     * 这里只负责记录 id 供扫描时反查。
+     */
+    public static <T extends EntityType<?>> T entity(String modId, String id, T type) {
+        ID_BY_OBJECT.put(type, Identifier.fromNamespaceAndPath(modId, id));
+        return type;
+    }
+
+    /** 为已构造的 {@link BlockEntityType} 登记 id。 */
+    public static <T extends BlockEntityType<?>> T blockEntity(String modId, String id, T type) {
+        ID_BY_OBJECT.put(type, Identifier.fromNamespaceAndPath(modId, id));
+        return type;
     }
 
     // ==================== 公开注册入口 ====================
 
-    /**
-     * 注册类中所有 public static final Item 字段。
-     * 扫描完成后会自动调用目标类的静态方法 registerAbilities()（若存在）。
-     */
-    public static void items(Class<?> clazz, String modId) {
-        scan(clazz, modId, Item.class, Registries.ITEM);
+    /** 注册类里所有 public static final Item 字段。 */
+    public static void items(Class<?> clazz) {
+        int count = scan(clazz, Item.class, BuiltInRegistries.ITEM);
+        MossLib.LOGGER.info("[AutoRegister] {} items from {}", count, clazz.getSimpleName());
         tryInvokePostRegister(clazz);
     }
 
-    /** 注册类中所有 public static final Block 字段（不生成 BlockItem）。 */
-    public static void blocks(Class<?> clazz, String modId) {
-        scan(clazz, modId, Block.class, Registries.BLOCK);
+    /** 注册类里所有 public static final Block 字段。 */
+    public static void blocks(Class<?> clazz) {
+        int count = scan(clazz, Block.class, BuiltInRegistries.BLOCK);
+        MossLib.LOGGER.info("[AutoRegister] {} blocks from {}", count, clazz.getSimpleName());
     }
 
     /**
-     * 注册类中所有 public static final Block 字段，并为其生成 BlockItem。
-     * 使用默认的 Item.Settings。
+     * 注册所有 Block，并为每个 Block 创建一个带同样 id 的 BlockItem。
+     * <p>被 {@link NoItem} 注解标记的字段会跳过 BlockItem 创建。
      */
-    public static void blocksWithItems(Class<?> clazz, String modId) {
-        blocksWithItems(clazz, modId, new Item.Settings());
-    }
+    public static void blocksWithItems(Class<?> clazz) {
+        int blocks = 0;
+        int items = 0;
 
-    /*
-     注册类中所有 public static final Block 字段，并为其生成 BlockItem
-     <p>使用原版 {@link Items#register(Block, Item.Settings)} 完成物品注册
-     它会同时填充内部映射，确保 {@code block.asItem()} 返回同一个实例，
-     因此 {@code ModBlocks.FOO.asItem() == 注册物品} 恒成立。
-     <p>标注了 {@link NoItem} 的字段仅注册方块，不生成物品。
-     */
-
-    public static void blocksWithItems(Class<?> clazz, String modId, Item.Settings itemSettings) {
         for (Field field : clazz.getDeclaredFields()) {
             if (!isValid(field, Block.class)) continue;
             Block block = getStaticField(field, Block.class);
 
-            String id = resolveId(field);
-            Registry.register(Registries.BLOCK, new Identifier(modId, id), block);
+            Identifier blockId = ID_BY_OBJECT.get(block);
+            if (blockId == null) {
+                MossLib.LOGGER.error(
+                        "[AutoRegister] Block {} was not created via AutoRegister.block(), skipping",
+                        field.getName());
+                continue;
+            }
+
+            Registry.register(BuiltInRegistries.BLOCK, blockId, block);
+            blocks++;
 
             if (!field.isAnnotationPresent(NoItem.class)) {
-                BlockItem blockItem = new BlockItem(block, itemSettings);
-                Items.register(block, blockItem);
+                ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, blockId);
+                BlockItem blockItem = new BlockItem(block, new Item.Properties().setId(itemKey));
+                Registry.register(BuiltInRegistries.ITEM, blockId, blockItem);
+                items++;
             }
         }
+
+        MossLib.LOGGER.info("[AutoRegister] {} blocks + {} items from {}",
+                blocks, items, clazz.getSimpleName());
     }
 
-    /** 注册类中所有 public static final EntityType 字段。 */
-    public static void entities(Class<?> clazz, String modId) {
-        scan(clazz, modId, EntityType.class, Registries.ENTITY_TYPE);
+    /** 注册所有 EntityType 字段。 */
+    public static void entities(Class<?> clazz) {
+        int count = scan(clazz, EntityType.class, BuiltInRegistries.ENTITY_TYPE);
+        MossLib.LOGGER.info("[AutoRegister] {} entities from {}", count, clazz.getSimpleName());
     }
 
-    /** 注册类中所有 public static final BlockEntityType 字段。 */
-    public static void blockEntities(Class<?> clazz, String modId) {
-        scan(clazz, modId, BlockEntityType.class, Registries.BLOCK_ENTITY_TYPE);
+    /** 注册所有 BlockEntityType 字段。 */
+    public static void blockEntities(Class<?> clazz) {
+        int count = scan(clazz, BlockEntityType.class, BuiltInRegistries.BLOCK_ENTITY_TYPE);
+        MossLib.LOGGER.info("[AutoRegister] {} block entities from {}", count, clazz.getSimpleName());
     }
 
     // ==================== 私有工具 ====================
 
-    /**
-     * 通用扫描：避免泛型通配符与 Registry&lt;T&gt; 的类型冲突，
-     * 使用原始类型 + 手动类型检查。类型安全由 {@link #isValid} 保证。
-     */
+    /** 通用扫描注册。id 从 {@link #ID_BY_OBJECT} 查，查不到就跳过并报错。 */
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private static void scan(Class<?> clazz, String modId, Class<?> type, Registry registry) {
+    private static int scan(Class<?> clazz, Class<?> type, Registry registry) {
+        int count = 0;
         for (Field field : clazz.getDeclaredFields()) {
             if (!isValid(field, type)) continue;
             Object instance = getStaticField(field, type);
-            Registry.register(registry, new Identifier(modId, resolveId(field)), instance);
+
+            Identifier id = ID_BY_OBJECT.get(instance);
+            if (id == null) {
+                MossLib.LOGGER.error(
+                        "[AutoRegister] {} was not created via AutoRegister factory, skipping",
+                        field.getName());
+                continue;
+            }
+
+            Registry.register(registry, id, instance);
+            MossLib.LOGGER.debug("[AutoRegister] Registered {} -> {}", id, clazz.getSimpleName());
+            count++;
         }
+        return count;
     }
 
-    /** 读取静态字段，若为 null 则抛出带有明确提示的异常。 */
     private static <T> T getStaticField(Field field, Class<T> type) {
         try {
             Object value = field.get(null);
             if (value == null) {
-                throw new IllegalStateException("Field " + field.getName()
-                        + " is null. AutoRegister must be called AFTER field initialization.");
+                MossLib.LOGGER.error("[AutoRegister] Field {} is null. " +
+                        "AutoRegister must be called AFTER field initialization.", field.getName());
+                throw new IllegalStateException("Field " + field.getName() + " is null.");
             }
             return type.cast(value);
         } catch (IllegalAccessException e) {
+            MossLib.LOGGER.error("[AutoRegister] Failed to read field: {}", field.getName(), e);
             throw new RuntimeException("Failed to read field: " + field.getName(), e);
         }
     }
 
-    /** 解析注册 ID：优先读取 {@link Id} 注解，否则将字段名转小写。 */
-    private static String resolveId(Field field) {
-        Id annotation = field.getAnnotation(Id.class);
-        return annotation != null ? annotation.value() : field.getName().toLowerCase();
-    }
-
-    /** 若目标类定义了静态方法 registerAbilities()，自动调用它。 */
     private static void tryInvokePostRegister(Class<?> clazz) {
         Method method;
         try {
             method = clazz.getDeclaredMethod("registerAbilities");
         } catch (NoSuchMethodException e) {
-            return; // 没有这个方法很正常，直接返回
+            return;
         }
 
         if (!Modifier.isStatic(method.getModifiers())) {
+            MossLib.LOGGER.error("[AutoRegister] registerAbilities() must be static in {}",
+                    clazz.getName());
             throw new IllegalStateException(
                     "registerAbilities() must be static in " + clazz.getName());
         }
@@ -167,16 +203,16 @@ public final class AutoRegister {
         try {
             method.setAccessible(true);
             method.invoke(null);
+            MossLib.LOGGER.debug("[AutoRegister] Invoked registerAbilities() on {}",
+                    clazz.getSimpleName());
         } catch (Exception e) {
+            MossLib.LOGGER.error("[AutoRegister] Failed to invoke registerAbilities() on {}",
+                    clazz.getName(), e);
             throw new RuntimeException(
                     "Failed to invoke registerAbilities() on " + clazz.getName(), e);
         }
     }
 
-    /**
-     * 判断字段是否符合自动注册的约定：
-     * public static final + 类型匹配。
-     */
     private static boolean isValid(Field field, Class<?> expectedType) {
         int mod = field.getModifiers();
         return Modifier.isPublic(mod)

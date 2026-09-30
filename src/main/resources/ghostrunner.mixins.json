@@ -5,8 +5,7 @@
 	"mixins": [
       "LivingEntityDamageMixin",
       "LivingEntityTravelMixin",
-      "PlayerEntityMixin",
-      "ServerWorldTickEntityMixin"
+      "PlayerEntityMixin"
     ],
 	"injectors": {
 		"defaultRequire": 1

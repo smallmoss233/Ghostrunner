@@ -1,31 +1,28 @@
 package ghostrunner.mixin.client;
 
-import com.llamalad7.mixinextras.sugar.Local;
 import ghostrunner.GhostrunnerClient;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.renderer.GameRenderer;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
 
-    @Inject(
-            method = "renderWorld",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lcom/mojang/blaze3d/systems/RenderSystem;setInverseViewRotationMatrix(Lorg/joml/Matrix3f;)V",
-                    shift = At.Shift.BEFORE
-            )
+    /**
+     * renderLevel 里第一个 Matrix4f 局部变量是投影矩阵。
+     * 叠加 Z 轴旋转产生跑墙的镜头倾斜（Roll）。
+     */
+    @ModifyVariable(
+            method = "renderLevel",
+            at = @At(value = "STORE", ordinal = 0),
+            ordinal = 0
     )
-    private void ghostrunner$addWallRunRoll(CallbackInfo ci,
-                                            @Local(argsOnly = true) MatrixStack matrices) {
+    private Matrix4f ghostrunner$addWallRunRoll(Matrix4f projectionMatrix) {
         float rollRad = GhostrunnerClient.currentRoll;
-        if (rollRad == 0.0F) return;
-
-        // rotateLocalZ = 左乘 Rz，作用于相机本地坐标系，等价于"绕视线轴翻滚"
-        matrices.peek().getPositionMatrix().rotateLocalZ(rollRad);
+        if (rollRad == 0.0F) return projectionMatrix;
+        // rotateZ 会原地修改并返回 this
+        return projectionMatrix.rotateZ(rollRad);
     }
 }

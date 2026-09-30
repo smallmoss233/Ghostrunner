@@ -1,11 +1,11 @@
 package ghostrunner.handler;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,24 +35,24 @@ public final class ClimbHandler {
         cooldowns.replaceAll((uuid, t) -> Math.max(0, t - 1));
     }
 
-    public static boolean isOnCooldown(PlayerEntity player) {
-        Integer t = cooldowns.get(player.getUuid());
+    public static boolean isOnCooldown(Player player) {
+        Integer t = cooldowns.get(player.getUUID());
         return t != null && t > 0;
     }
 
     // ================================================================
-    //                          目标检测（不变）
+    //                          目标检测
     // ================================================================
 
-    public static BlockPos findClimbTarget(PlayerEntity player) {
-        Direction facing = player.getHorizontalFacing();
-        Direction left = facing.rotateYCounterclockwise();
-        Direction right = facing.rotateYClockwise();
+    public static BlockPos findClimbTarget(Player player) {
+        Direction facing = player.getDirection();
+        Direction left = facing.getCounterClockWise();
+        Direction right = facing.getClockWise();
 
         int[][] dirs = {
-                {facing.getOffsetX(), facing.getOffsetZ()},
-                {facing.getOffsetX() + left.getOffsetX(), facing.getOffsetZ() + left.getOffsetZ()},
-                {facing.getOffsetX() + right.getOffsetX(), facing.getOffsetZ() + right.getOffsetZ()},
+                {facing.getStepX(), facing.getStepZ()},
+                {facing.getStepX() + left.getStepX(), facing.getStepZ() + left.getStepZ()},
+                {facing.getStepX() + right.getStepX(), facing.getStepZ() + right.getStepZ()},
         };
 
         for (int[] d : dirs) {
@@ -62,10 +62,10 @@ public final class ClimbHandler {
         return null;
     }
 
-    public static BlockPos findClimbTargetInDirection(PlayerEntity player, int dx, int dz) {
+    public static BlockPos findClimbTargetInDirection(Player player, int dx, int dz) {
         if (dx == 0 && dz == 0) return null;
 
-        World world = player.getWorld();
+        Level level = player.level();
         var box = player.getBoundingBox();
         int feetY = (int) Math.floor(box.minY);
 
@@ -77,8 +77,8 @@ public final class ClimbHandler {
         int wallTop = Integer.MIN_VALUE;
         for (int y = feetY; y <= feetY + MAX_CLIMB_HEIGHT; y++) {
             BlockPos p = new BlockPos(x, y, z);
-            var state = world.getBlockState(p);
-            boolean hasCollision = !state.getCollisionShape(world, p).isEmpty();
+            var state = level.getBlockState(p);
+            boolean hasCollision = !state.getCollisionShape(level, p).isEmpty();
 
             if (hasCollision) {
                 wallTop = y;
@@ -90,17 +90,17 @@ public final class ClimbHandler {
         if (wallTop == Integer.MIN_VALUE) return null;
 
         int targetY = wallTop + 1;
-        int heightDiff = targetY - player.getBlockPos().getY();
+        int heightDiff = targetY - player.blockPosition().getY();
         if (heightDiff < 1 || heightDiff > MAX_CLIMB_HEIGHT) return null;
 
         BlockPos target = new BlockPos(x, targetY, z);
 
-        if (!world.getBlockState(target).getCollisionShape(world, target).isEmpty()) return null;
+        if (!level.getBlockState(target).getCollisionShape(level, target).isEmpty()) return null;
 
-        BlockPos head = target.up();
-        var headShape = world.getBlockState(head).getCollisionShape(world, head);
+        BlockPos head = target.above();
+        var headShape = level.getBlockState(head).getCollisionShape(level, head);
         if (!headShape.isEmpty()) {
-            double maxY = headShape.getMax(Direction.Axis.Y);
+            double maxY = headShape.max(Direction.Axis.Y);
             if (maxY >= 1.5) return null;
         }
 
@@ -111,20 +111,19 @@ public final class ClimbHandler {
     //                          执行
     // ================================================================
 
-    public static void tryClimb(ServerPlayerEntity player) {
+    public static void tryClimb(ServerPlayer player) {
         if (isOnCooldown(player)) return;
 
         BlockPos target = findClimbTarget(player);
         if (target == null) return;
 
-        int heightDiff = target.getY() - player.getBlockPos().getY();
-        applyClimbVelocity(player, heightDiff, player.getYaw());
+        int heightDiff = target.getY() - player.blockPosition().getY();
+        applyClimbVelocity(player, heightDiff, player.getYRot());
 
-        // 设置冷却
-        cooldowns.put(player.getUuid(), CLIMB_COOLDOWN);
+        cooldowns.put(player.getUUID(), CLIMB_COOLDOWN);
     }
 
-    public static void applyClimbVelocity(PlayerEntity player, int heightDiff, float yaw) {
+    public static void applyClimbVelocity(Player player, int heightDiff, float yRot) {
         double vy = switch (heightDiff) {
             case 1 -> VY_1;
             case 2 -> VY_2;
@@ -133,9 +132,8 @@ public final class ClimbHandler {
         };
         if (vy == 0) return;
 
-        Vec3d forward = Vec3d.fromPolar(0, yaw).normalize();
-        player.setVelocity(forward.x * FORWARD_V, vy, forward.z * FORWARD_V);
-        player.velocityModified = true;
+        Vec3 forward = Vec3.directionFromRotation(0, yRot).normalize();
+        MotionSync.setAndSync(player, forward.x * FORWARD_V, vy, forward.z * FORWARD_V);
         player.fallDistance = 0;
     }
 }

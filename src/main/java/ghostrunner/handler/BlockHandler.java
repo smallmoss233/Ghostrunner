@@ -1,15 +1,17 @@
 package ghostrunner.handler;
 
 import ghostrunner.api.GhostrunnerStamina;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.PersistentProjectileEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.item.ItemStack;
 
 public final class BlockHandler {
 
@@ -21,67 +23,49 @@ public final class BlockHandler {
     /** 完美格挡远程时的耐力消耗 */
     public static final float STAMINA_PERFECT_PROJECTILE = 10.0f;
 
-    /**
-     * 格挡前摇（tick）。按下右键后这段时间内**格挡完全不生效**。
-     * <p>6 tick = 0.3 秒。攻击会直接命中。
-     */
     public static final int PERFECT_PREPARE_TICKS = 6;
-
-    /**
-     * 完美格挡窗口长度（tick）。前摇结束后的这段时间内可以完美格挡。
-     * <p>10 tick = 0.5 秒。
-     */
     public static final int PERFECT_WINDOW_TICKS = 10;
-
-    /** 完美格挡近战反伤值（会被一击必杀 Mixin 放大到致命） */
     public static final float PARRY_REFLECT_DAMAGE = 1.0f;
 
-    /**
-     * 尝试格挡。返回 true 表示伤害被完全挡下。
-     */
-    public static boolean tryBlock(PlayerEntity player, DamageSource source) {
+    public static boolean tryBlock(Player player, DamageSource source) {
         GhostrunnerStamina stamina = (GhostrunnerStamina) player;
 
-        // 不在格挡状态
         if (!stamina.ghostrunner$isBlocking()) return false;
 
-        // 手持剑类武器才能格挡
-        ItemStack mainHand = player.getMainHandStack();
-        if (!mainHand.isIn(ItemTags.SWORDS)) {
+        ItemStack mainHand = player.getMainHandItem();
+        if (!mainHand.is(ItemTags.SWORDS)) {
             stamina.ghostrunner$setBlocking(false);
             return false;
         }
 
         int ticks = stamina.ghostrunner$getBlockTicks();
 
-        // ★ 前摇期：格挡未生效，攻击直接穿透
         if (ticks < PERFECT_PREPARE_TICKS) {
             return false;
         }
 
-        // 完美格挡窗口判定
         boolean perfect = ticks <= PERFECT_PREPARE_TICKS + PERFECT_WINDOW_TICKS;
-        boolean projectile = source.getSource() instanceof PersistentProjectileEntity;
+        boolean projectile = source.getDirectEntity() instanceof AbstractArrow;
 
         if (perfect) {
             if (projectile) {
-                // 完美格挡远程：耐力消耗降到 10
                 if (stamina.ghostrunner$getStamina() < STAMINA_PERFECT_PROJECTILE) {
                     stamina.ghostrunner$setBlocking(false);
                     return false;
                 }
                 stamina.ghostrunner$consumeStamina(STAMINA_PERFECT_PROJECTILE);
-                playSound(player, SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+                playSound(player, SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
                 return true;
             } else {
-                // 完美格挡近战：不耗耐力 + 反伤攻击者
-                Entity attacker = source.getAttacker();
-                if (attacker instanceof LivingEntity livingAttacker) {
-                    livingAttacker.damage(
-                            player.getDamageSources().playerAttack(player),
+                Entity attacker = source.getEntity();
+                if (attacker instanceof LivingEntity livingAttacker
+                        && player.level() instanceof ServerLevel serverLevel) {
+                    livingAttacker.hurtServer(
+                            serverLevel,
+                            player.damageSources().playerAttack(player),
                             PARRY_REFLECT_DAMAGE);
                 }
-                playSound(player, SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+                playSound(player, SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
                 return true;
             }
         }
@@ -92,20 +76,17 @@ public final class BlockHandler {
             return false;
         }
         stamina.ghostrunner$consumeStamina(STAMINA_PER_BLOCK);
-        playSound(player, SoundEvents.ITEM_SHIELD_BLOCK, 0.8f, 1.2f);
+        playSound(player, SoundEvents.SHIELD_BLOCK.value(), 0.8f, 1.2f);
         return true;
     }
 
-    private static void playSound(PlayerEntity player,
-                                  net.minecraft.sound.SoundEvent sound,
-                                  float volume, float pitch) {
-        player.getWorld().playSound(null,
+    private static void playSound(Player player, SoundEvent sound, float volume, float pitch) {
+        player.level().playSound(null,
                 player.getX(), player.getY(), player.getZ(),
-                sound, SoundCategory.PLAYERS, volume, pitch);
+                sound, SoundSource.PLAYERS, volume, pitch);
     }
 
-    /** 强制取消格挡。 */
-    public static void forceCancel(PlayerEntity player) {
+    public static void forceCancel(Player player) {
         GhostrunnerStamina stamina = (GhostrunnerStamina) player;
         stamina.ghostrunner$setBlocking(false);
     }

@@ -1,5 +1,5 @@
 plugins {
-    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
 
@@ -11,21 +11,11 @@ base {
 }
 
 repositories {
-    // Modrinth Maven（MMB、ModMenu 等模组从这拉）
     maven {
         name = "Modrinth"
         url = "https://api.modrinth.com/maven"
         content {
             includeGroup "maven.modrinth"
-        }
-    }
-
-    // TerraformersMC（ModMenu 用）
-    maven {
-        name = "TerraformersMC"
-        url = "https://maven.terraformersmc.com/releases/"
-        content {
-            includeGroup "com.terraformersmc"
         }
     }
 }
@@ -50,15 +40,11 @@ fabricApi {
 dependencies {
     // ========== Minecraft 基础 ==========
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    // 26.x 无混淆，Loom 1.17 默认使用 Mojang 官方映射，无需 mappings 行
 
     // ========== Fabric 基础 ==========
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-
-    // ========== MMB · Modern Model Backport ==========
-    modImplementation "maven.modrinth:TwXr0bZ5:kcGUnOpG"
-    include "maven.modrinth:TwXr0bZ5:kcGUnOpG"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
 processResources {
@@ -69,14 +55,14 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 17
+    it.options.release = 25
     it.options.encoding = "UTF-8"
 }
 
 java {
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 jar {
@@ -94,6 +80,5 @@ publishing {
         }
     }
     repositories {
-        // 以后要发布再填
     }
 }

@@ -1,30 +1,26 @@
 package mosslib.util;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import mosslib.util.tooltip.TooltipHelper;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
 public class ShiftTooltipHelper {
 
     @Environment(EnvType.CLIENT)
-    public static void addShiftTooltip(List<Text> tooltip, Text longText) {
-        boolean shiftPressed = false;
-        if (MinecraftClient.getInstance().getWindow() != null) {
-            long handle = MinecraftClient.getInstance().getWindow().getHandle();
-            shiftPressed = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS ||
-                    GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
-        }
+    public static void addShiftTooltip(List<Component> tooltip, Component longText) {
+        boolean shiftPressed = InputConstants.isKeyDown(InputConstants.KEY_LSHIFT)
+                || InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);
+
         if (shiftPressed) {
-            // 使用 TooltipHelper 将长文本按 * 拆分成多行
             TooltipHelper.addWrappedTooltip(tooltip, longText);
         } else {
-            tooltip.add(Text.translatable("tooltip.ghostrunner.hold_shift").formatted(Formatting.GRAY, Formatting.ITALIC));
+            tooltip.add(Component.translatable("tooltip.ghostrunner.hold_shift")
+                    .withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
         }
     }
 }
