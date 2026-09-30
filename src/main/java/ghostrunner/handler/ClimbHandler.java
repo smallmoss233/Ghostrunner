@@ -1,5 +1,6 @@
 package ghostrunner.handler;
 
+import ghostrunner.api.GhostrunnerPlayer;
 import ghostrunner.config.GhostrunnerConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -48,6 +49,9 @@ public final class ClimbHandler {
         applyClimbVelocity(player, heightDiff);
 
         COOLDOWNS.set(player.getUUID(), GhostrunnerConfig.CLIMB_COOLDOWN);
+
+        GhostrunnerPlayer.of(player).ghostrunner$data().wallRunCooldown =
+                GhostrunnerConfig.CLIMB_WALLRUN_LOCK_TICKS;
     }
 
     // ================================================================

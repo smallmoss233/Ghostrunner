@@ -35,10 +35,6 @@ public final class GhostrunnerConfig {
     public static final double BT_RELEASE_UP_MAX = 0.8;
     /** 释放时的最大向下速度 */
     public static final double BT_RELEASE_DOWN_MAX = 1.0;
-    /** 子弹时间的 tick rate */
-    public static final float BULLET_TIME_RATE = 2.0f;
-    /** 正常 tick rate */
-    public static final float NORMAL_RATE = 20.0f;
     /** 释放后摔落免疫宽限期（毫秒） */
     public static final long BT_FALL_GRACE_MILLIS = 2000L;
     /** 每秒消耗的耐力。 */
@@ -90,6 +86,9 @@ public final class GhostrunnerConfig {
     public static final double WALL_DASH_WINDOW_TOWARD_MIN = 0.15;
     /** 冲刺窗口的斜撞角度上界。高于此视为"正撞"。 */
     public static final double WALL_DASH_WINDOW_TOWARD_MAX = 0.75;
+
+    /** 爬墙成功后，禁止进入跑墙的时间（tick）。避免"爬墙瞬间被识别为跑墙"。 */
+    public static final int CLIMB_WALLRUN_LOCK_TICKS = 12;
 
     // ================================================================
     //                          格挡
