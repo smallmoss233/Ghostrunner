@@ -12,8 +12,7 @@ public final class GRItems {
     public static final Item GHOSTRUNNER_TAG = AutoRegister.item(
             Ghostrunner.MOD_ID,
             "ghostrunner_tag",
-            props -> new GhostrunnerTagItem(
-                    props.stacksTo(1).rarity(Rarity.EPIC)));
+            props -> new GhostrunnerTagItem(props.stacksTo(1).rarity(Rarity.EPIC)));
 
     public static void register() {
         AutoRegister.items(GRItems.class);

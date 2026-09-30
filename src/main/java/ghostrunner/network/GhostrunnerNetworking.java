@@ -1,211 +1,182 @@
 package ghostrunner.network;
 
-import ghostrunner.Ghostrunner;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import mosslib.api.PayloadRegistrar;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
 
 public final class GhostrunnerNetworking {
+
     private GhostrunnerNetworking() {}
 
-    // ============ C2S 数据包定义 ============
+    private static final PayloadRegistrar REGISTRAR = new PayloadRegistrar();
 
-    // 1. 跑墙跳出 / 爬墙
-    public record JumpOffWallPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("jump_off_wall");
-        public static final CustomPacketPayload.Type<JumpOffWallPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, JumpOffWallPayload> CODEC =
-                StreamCodec.unit(new JumpOffWallPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
+    // ================================================================
+    //                      C2S 数据包
+    // ================================================================
 
-    // 2. 短按冲刺
-    public record DashPayload(boolean forward, boolean back, boolean left, boolean right) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("dash");
-        public static final CustomPacketPayload.Type<DashPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, DashPayload> CODEC =
+    /** 简单动作包。6 个无参数 C2S 请求合并。 */
+    public record ActionPayload(Action action) implements CustomPacketPayload {
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, ActionPayload> CODEC =
                 StreamCodec.composite(
-                        ByteBufCodecs.BOOL, DashPayload::forward,
-                        ByteBufCodecs.BOOL, DashPayload::back,
-                        ByteBufCodecs.BOOL, DashPayload::left,
-                        ByteBufCodecs.BOOL, DashPayload::right,
-                        DashPayload::new
-                );
+                        Action.STREAM_CODEC, ActionPayload::action,
+                        ActionPayload::new);
+
+        public static final Type<ActionPayload> TYPE =
+                REGISTRAR.c2s("action", ActionPayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+
+        public enum Action {
+            JUMP_OFF_WALL,
+            DASH_CHARGE_RELEASE,
+            ATTACK,
+            BLOCK_START,
+            BLOCK_STOP,
+            BULLET_TIME_EXIT_REQUEST;
+
+            private static final Action[] VALUES = values();
+
+            public static final StreamCodec<RegistryFriendlyByteBuf, Action> STREAM_CODEC =
+                    StreamCodec.of(
+                            (buf, action) -> buf.writeByte(action.ordinal()),
+                            buf -> VALUES[buf.readByte()]);
+        }
     }
 
-    // 3. 蓄力开始
-    public record DashChargeStartPayload(boolean forward, boolean back, boolean left, boolean right) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("dash_charge_start");
-        public static final CustomPacketPayload.Type<DashChargeStartPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, DashChargeStartPayload> CODEC =
+    public record MovePayload(Context context,
+                              boolean forward, boolean back,
+                              boolean left, boolean right) implements CustomPacketPayload {
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, MovePayload> CODEC =
                 StreamCodec.composite(
-                        ByteBufCodecs.BOOL, DashChargeStartPayload::forward,
-                        ByteBufCodecs.BOOL, DashChargeStartPayload::back,
-                        ByteBufCodecs.BOOL, DashChargeStartPayload::left,
-                        ByteBufCodecs.BOOL, DashChargeStartPayload::right,
-                        DashChargeStartPayload::new
-                );
+                        Context.STREAM_CODEC, MovePayload::context,
+                        ByteBufCodecs.BOOL, MovePayload::forward,
+                        ByteBufCodecs.BOOL, MovePayload::back,
+                        ByteBufCodecs.BOOL, MovePayload::left,
+                        ByteBufCodecs.BOOL, MovePayload::right,
+                        MovePayload::new);
+
+        public static final Type<MovePayload> TYPE =
+                REGISTRAR.c2s("move", MovePayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+
+        public enum Context {
+            DASH,
+            CHARGE_START,
+            CHARGE_AIM;
+
+            private static final Context[] VALUES = values();
+
+            public static final StreamCodec<RegistryFriendlyByteBuf, Context> STREAM_CODEC =
+                    StreamCodec.of(
+                            (buf, ctx) -> buf.writeByte(ctx.ordinal()),
+                            buf -> VALUES[buf.readByte()]);
+        }
     }
 
-    // 4. 蓄力方向更新
-    public record DashChargeAimPayload(boolean forward, boolean back, boolean left, boolean right) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("dash_charge_aim");
-        public static final CustomPacketPayload.Type<DashChargeAimPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, DashChargeAimPayload> CODEC =
+    // ================================================================
+    //                      S2C 数据包
+    // ================================================================
+
+    public record NoticePayload(Notice notice) implements CustomPacketPayload {
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, NoticePayload> CODEC =
                 StreamCodec.composite(
-                        ByteBufCodecs.BOOL, DashChargeAimPayload::forward,
-                        ByteBufCodecs.BOOL, DashChargeAimPayload::back,
-                        ByteBufCodecs.BOOL, DashChargeAimPayload::left,
-                        ByteBufCodecs.BOOL, DashChargeAimPayload::right,
-                        DashChargeAimPayload::new
-                );
+                        Notice.STREAM_CODEC, NoticePayload::notice,
+                        NoticePayload::new);
+
+        public static final Type<NoticePayload> TYPE =
+                REGISTRAR.s2c("notice", NoticePayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+
+        public enum Notice {
+            DASH_SUCCESS,
+            PARRY_SUCCESS;
+
+            private static final Notice[] VALUES = values();
+
+            public static final StreamCodec<RegistryFriendlyByteBuf, Notice> STREAM_CODEC =
+                    StreamCodec.of(
+                            (buf, notice) -> buf.writeByte(notice.ordinal()),
+                            buf -> VALUES[buf.readByte()]);
+        }
     }
 
-    // 5. 蓄力释放
-    public record DashChargeReleasePayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("dash_charge_release");
-        public static final CustomPacketPayload.Type<DashChargeReleasePayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, DashChargeReleasePayload> CODEC =
-                StreamCodec.unit(new DashChargeReleasePayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
-
-    // 6. 挥砍 / 弹反
-    public record AttackPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("attack");
-        public static final CustomPacketPayload.Type<AttackPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, AttackPayload> CODEC =
-                StreamCodec.unit(new AttackPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
-
-    // 7. 格挡开始
-    public record BlockStartPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("block_start");
-        public static final CustomPacketPayload.Type<BlockStartPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, BlockStartPayload> CODEC =
-                StreamCodec.unit(new BlockStartPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
-
-    // 8. 格挡结束
-    public record BlockStopPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("block_stop");
-        public static final CustomPacketPayload.Type<BlockStopPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, BlockStopPayload> CODEC =
-                StreamCodec.unit(new BlockStopPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
-
-    // ============ S2C 数据包定义 ============
-
-    // 9. 跑墙状态
     public record WallRunStatePayload(boolean running, int wallSideOrdinal) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("wall_run_state");
-        public static final CustomPacketPayload.Type<WallRunStatePayload> TYPE = new CustomPacketPayload.Type<>(ID);
+
         public static final StreamCodec<RegistryFriendlyByteBuf, WallRunStatePayload> CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.BOOL, WallRunStatePayload::running,
                         ByteBufCodecs.VAR_INT, WallRunStatePayload::wallSideOrdinal,
-                        WallRunStatePayload::new
-                );
+                        WallRunStatePayload::new);
+
+        public static final Type<WallRunStatePayload> TYPE =
+                REGISTRAR.s2c("wall_run_state", WallRunStatePayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    // 10. 幽灵行者标记
     public record AscendedStatePayload(boolean ascended) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("ascended_state");
-        public static final CustomPacketPayload.Type<AscendedStatePayload> TYPE = new CustomPacketPayload.Type<>(ID);
+
         public static final StreamCodec<RegistryFriendlyByteBuf, AscendedStatePayload> CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.BOOL, AscendedStatePayload::ascended,
-                        AscendedStatePayload::new
-                );
+                        AscendedStatePayload::new);
+
+        public static final Type<AscendedStatePayload> TYPE =
+                REGISTRAR.s2c("ascended_state", AscendedStatePayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    // 11. 子弹时间状态
-    public record BulletTimeStatePayload(boolean inBulletTime) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("bullet_time_state");
-        public static final CustomPacketPayload.Type<BulletTimeStatePayload> TYPE = new CustomPacketPayload.Type<>(ID);
+    public record BulletTimeStatePayload(boolean active, float stamina) implements CustomPacketPayload {
+
         public static final StreamCodec<RegistryFriendlyByteBuf, BulletTimeStatePayload> CODEC =
                 StreamCodec.composite(
-                        ByteBufCodecs.BOOL, BulletTimeStatePayload::inBulletTime,
-                        BulletTimeStatePayload::new
-                );
+                        ByteBufCodecs.BOOL, BulletTimeStatePayload::active,
+                        ByteBufCodecs.FLOAT, BulletTimeStatePayload::stamina,
+                        BulletTimeStatePayload::new);
+
+        public static final Type<BulletTimeStatePayload> TYPE =
+                REGISTRAR.s2c("bullet_time_state", BulletTimeStatePayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    // 12. 冲刺成功
-    public record DashSuccessPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("dash_success");
-        public static final CustomPacketPayload.Type<DashSuccessPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, DashSuccessPayload> CODEC =
-                StreamCodec.unit(new DashSuccessPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
-
-    // 13. 耐力同步
     public record StaminaPayload(float stamina) implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("stamina");
-        public static final CustomPacketPayload.Type<StaminaPayload> TYPE = new CustomPacketPayload.Type<>(ID);
+
         public static final StreamCodec<RegistryFriendlyByteBuf, StaminaPayload> CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.FLOAT, StaminaPayload::stamina,
-                        StaminaPayload::new
-                );
+                        StaminaPayload::new);
+
+        public static final Type<StaminaPayload> TYPE =
+                REGISTRAR.s2c("stamina", StaminaPayload.CODEC);
+
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    // 14. 完美格挡成功
-    public record ParrySuccessPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("parry_success");
-        public static final CustomPacketPayload.Type<ParrySuccessPayload> TYPE = new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, ParrySuccessPayload> CODEC =
-                StreamCodec.unit(new ParrySuccessPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
-    }
+    // ================================================================
+    //                      注册
+    // ================================================================
 
-    // ============ 注册方法 ============
+    @SuppressWarnings("unused")
+    private static final Object[] TOUCH_PAYLOADS = {
+            ActionPayload.TYPE,
+            MovePayload.TYPE,
+            NoticePayload.TYPE,
+            WallRunStatePayload.TYPE,
+            AscendedStatePayload.TYPE,
+            BulletTimeStatePayload.TYPE,
+            StaminaPayload.TYPE,
+    };
 
-    /**
-     * 在 {@code Ghostrunner#onInitialize} 中调用，注册所有数据包类型。
-     */
     public static void registerPayloads() {
-        // C2S
-        PayloadTypeRegistry.serverboundPlay().register(JumpOffWallPayload.TYPE, JumpOffWallPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(DashPayload.TYPE, DashPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(DashChargeStartPayload.TYPE, DashChargeStartPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(DashChargeAimPayload.TYPE, DashChargeAimPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(DashChargeReleasePayload.TYPE, DashChargeReleasePayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(AttackPayload.TYPE, AttackPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(BlockStartPayload.TYPE, BlockStartPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(BlockStopPayload.TYPE, BlockStopPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(BulletTimeExitRequestPayload.TYPE, BulletTimeExitRequestPayload.CODEC);
-
-        // S2C
-        PayloadTypeRegistry.clientboundPlay().register(WallRunStatePayload.TYPE, WallRunStatePayload.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(AscendedStatePayload.TYPE, AscendedStatePayload.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(BulletTimeStatePayload.TYPE, BulletTimeStatePayload.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(DashSuccessPayload.TYPE, DashSuccessPayload.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(StaminaPayload.TYPE, StaminaPayload.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(ParrySuccessPayload.TYPE, ParrySuccessPayload.CODEC);
-    }
-    // ============ C2S 数据包定义 ============
-
-    // 15. 子弹时间提前退出请求
-    public record BulletTimeExitRequestPayload() implements CustomPacketPayload {
-        public static final Identifier ID = Ghostrunner.id("bullet_time_exit_request");
-        public static final CustomPacketPayload.Type<BulletTimeExitRequestPayload> TYPE =
-                new CustomPacketPayload.Type<>(ID);
-        public static final StreamCodec<RegistryFriendlyByteBuf, BulletTimeExitRequestPayload> CODEC =
-                StreamCodec.unit(new BulletTimeExitRequestPayload());
-        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+        REGISTRAR.commit();
     }
 }

@@ -1,8 +1,8 @@
 package ghostrunner.mixin;
 
-import ghostrunner.api.GhostrunnerState;
+import ghostrunner.api.GhostrunnerPlayer;
+import ghostrunner.data.GhostrunnerData;
 import ghostrunner.handler.BlockHandler;
-import ghostrunner.handler.BulletTimeManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
@@ -24,11 +24,12 @@ public abstract class LivingEntityDamageMixin {
         LivingEntity self = (LivingEntity) (Object) this;
 
         // ---- 幽灵行者被攻击 ----
-        if (self instanceof Player victim && GhostrunnerState.isGhostrunner(victim)) {
+        if (self instanceof Player victim && GhostrunnerPlayer.isGhostrunner(victim)) {
+            GhostrunnerData data = GhostrunnerPlayer.of(victim).ghostrunner$data();
 
-            // ★ 子弹时间中 / 刚释放子弹时间 → 免疫摔落
+            // 子弹时间宽限期内免疫摔落
             if (source.is(DamageTypeTags.IS_FALL)
-                    && BulletTimeManager.shouldImmuneFall(victim)) {
+                    && System.currentTimeMillis() < data.fallGraceUntilMs) {
                 cir.setReturnValue(false);
                 return;
             }
@@ -48,7 +49,7 @@ public abstract class LivingEntityDamageMixin {
 
         // ---- 幽灵行者攻击别人 ----
         if (source.getEntity() instanceof Player attacker
-                && GhostrunnerState.isGhostrunner(attacker)
+                && GhostrunnerPlayer.isGhostrunner(attacker)
                 && self != attacker) {
             self.setHealth(0);
             self.die(source);

@@ -16,18 +16,14 @@ public final class GhostrunnerCommand {
         dispatcher.register(Commands.literal("ghostrunner")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
 
-                // /ghostrunner set true|false
+                // /ghostrunner set <true|false>
                 .then(Commands.literal("set")
                         .then(Commands.argument("value", BoolArgumentType.bool())
                                 .executes(ctx -> {
                                     boolean value = BoolArgumentType.getBool(ctx, "value");
                                     ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                    ((GhostrunnerState.GhostrunnerStateAccessor) player)
-                                            .ghostrunner$setAscended(value);
-                                    ctx.getSource().sendSuccess(
-                                            () -> Component.literal("[Ghostrunner] ascended = " + value)
-                                                    .withStyle(ChatFormatting.AQUA),
-                                            false);
+                                    GhostrunnerPlayer.of(player).ghostrunner$setAscended(value);
+                                    sendSuccess(ctx, "ascended = " + value, ChatFormatting.AQUA);
                                     return 1;
                                 })))
 
@@ -35,13 +31,31 @@ public final class GhostrunnerCommand {
                 .then(Commands.literal("clear")
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
-                            ((GhostrunnerState.GhostrunnerStateAccessor) player)
-                                    .ghostrunner$setAscended(false);
-                            ctx.getSource().sendSuccess(
-                                    () -> Component.literal("[Ghostrunner] 标记已清除")
-                                            .withStyle(ChatFormatting.YELLOW),
-                                    false);
+                            GhostrunnerPlayer.of(player).ghostrunner$setAscended(false);
+                            sendSuccess(ctx, "标记已清除", ChatFormatting.YELLOW);
+                            return 1;
+                        }))
+
+                // /ghostrunner check
+                .then(Commands.literal("check")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            boolean ascended = GhostrunnerPlayer.of(player).ghostrunner$isAscended();
+                            sendSuccess(ctx, "ascended = " + ascended,
+                                    ascended ? ChatFormatting.GREEN : ChatFormatting.GRAY);
                             return 1;
                         })));
+    }
+
+    // ================================================================
+    //                          工具
+    // ================================================================
+
+    private static void sendSuccess(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx,
+                                    String message,
+                                    ChatFormatting color) {
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Ghostrunner] " + message).withStyle(color),
+                false);
     }
 }

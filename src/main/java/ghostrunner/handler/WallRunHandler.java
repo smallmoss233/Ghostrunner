@@ -1,82 +1,87 @@
 package ghostrunner.handler;
 
 import ghostrunner.api.GRTags;
+import ghostrunner.config.GhostrunnerConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * 跑墙。
+ * <p>三组职责：
+ * <ol>
+ *   <li><b>墙面探测</b>——{@link #findWall} 全方向，{@link #findWallInDirection} 单方向</li>
+ *   <li><b>进入条件</b>——{@link #canEnter} / {@link #isMovingTowardWall} / {@link #isApproachingWallAtAngle}</li>
+ *   <li><b>方向与跳出</b>——{@link #computeLockedDirection} / {@link #velocityFromLockedDirection} / {@link #jumpOffWall}</li>
+ * </ol>
+ * <p><b>性能约定</b>：{@code findWall} 是全方向扫描（进入时用），
+ * {@code findWallInDirection} 是单方向探测（跑墙维持时用）。
+ * 跑墙 tick 里应优先用单方向版本，避免每 tick 全扫。
+ */
 public final class WallRunHandler {
 
     private WallRunHandler() {}
 
     // ================================================================
-    //                          手感参数
-    // ================================================================
-
-    public static final double WALL_RUN_SPEED = 0.30;
-    public static final double WALL_PROBE = 0.15;
-    public static final double GRAVITY_COMPENSATION = 0.08;
-    public static final double JUMP_OUT_H = 0.35;
-    public static final double JUMP_OUT_V = 0.40;
-    public static final int REENTRY_COOLDOWN = 15;
-    public static final int MIN_WALL_RUN_TICKS = 4;
-
-    public static final double MIN_ENTRY_H_SPEED = 0.04;
-    public static final double MIN_ENTRY_TOWARD_WALL = 0.3;
-    public static final int MIN_AIRBORNE_TICKS = 2;
-
-    public static final double DASH_WINDOW_TOWARD_MIN = 0.15;
-    public static final double DASH_WINDOW_TOWARD_MAX = 0.75;
-
-    // ================================================================
     //                          墙面探测
     // ================================================================
 
-    /** 返回玩家紧贴的墙面方向；没有返回 null。 */
+    /**
+     * 全方向探测：返回玩家当前紧贴的墙面方向；没有返回 null。
+     * <p>用于"尝试进入跑墙"。
+     */
     public static Direction findWall(Player player) {
         Level level = player.level();
         AABB box = player.getBoundingBox().deflate(0.001);
 
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            AABB probe = box.move(
-                    dir.getStepX() * WALL_PROBE, 0, dir.getStepZ() * WALL_PROBE);
-            BlockPos min = BlockPos.containing(probe.minX, probe.minY, probe.minZ);
-            BlockPos max = BlockPos.containing(probe.maxX, probe.maxY, probe.maxZ);
-
-            for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-                BlockState state = level.getBlockState(p);
-                if (state.is(GRTags.WALL_RUN_BLACKLIST)) continue;
-                if (state.getCollisionShape(level, p).isEmpty()) continue;
-                return dir;
-            }
+            if (probeWall(level, box, dir)) return dir;
         }
         return null;
     }
 
-    // ================================================================
-    //                          条件判定
-    // ================================================================
-
-    public static boolean canEnter(Player player) {
-        if (player.onGround()) return false;
-        if (hasGroundBelow(player)) return false;
-        if (player.isInWater() || player.isInLava()) return false;
-        if (player.isFallFlying()) return false;
-        if (player.isShiftKeyDown()) return false;
-        if (player.onClimbable()) return false;
-
-        Vec3 vel = player.getDeltaMovement();
-        double hSpeedSq = vel.x * vel.x + vel.z * vel.z;
-        return hSpeedSq >= MIN_ENTRY_H_SPEED * MIN_ENTRY_H_SPEED;
+    /**
+     * 单方向探测：玩家是否仍然贴着指定方向的墙。
+     * <p>用于"跑墙维持"——只探测当前墙面，避免每 tick 全方向扫描。
+     */
+    public static boolean findWallInDirection(Player player, Direction dir) {
+        if (dir.getAxis() == Direction.Axis.Y) return false;
+        Level level = player.level();
+        AABB box = player.getBoundingBox().deflate(0.001);
+        return probeWall(level, box, dir);
     }
 
-    /** 玩家脚下是否踩着实心方块。 */
+    /**
+     * 探测一个方向。检查沿该方向偏移 {@code WALL_PROBE} 后的 AABB
+     * 是否与任何非黑名单方块的碰撞体相交。
+     */
+    private static boolean probeWall(Level level, AABB box, Direction dir) {
+        AABB probe = box.move(
+                dir.getStepX() * GhostrunnerConfig.WALL_PROBE,
+                0,
+                dir.getStepZ() * GhostrunnerConfig.WALL_PROBE);
+
+        BlockPos min = BlockPos.containing(probe.minX, probe.minY, probe.minZ);
+        BlockPos max = BlockPos.containing(probe.maxX, probe.maxY, probe.maxZ);
+
+        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+            BlockState state = level.getBlockState(p);
+            if (state.is(GRTags.WALL_RUN_BLACKLIST)) continue;
+            if (state.getCollisionShape(level, p).isEmpty()) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 玩家脚下是否踩着能站立的方块。
+     * <p>用碰撞形状判断（和墙面探测一致），而不是 {@code isSolidRender}——
+     * 后者对台阶、栅栏等判定太严格。
+     */
     public static boolean hasGroundBelow(Player player) {
         Level level = player.level();
         AABB box = player.getBoundingBox();
@@ -88,38 +93,74 @@ public final class WallRunHandler {
         BlockPos max = BlockPos.containing(probe.maxX, probe.maxY, probe.maxZ);
 
         for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-            // ★ 修正：26.3 中 isSolidRender 为无参版本
-            if (level.getBlockState(p).isSolidRender()) return true;
+            BlockState state = level.getBlockState(p);
+            if (state.isAir()) continue;
+            if (!state.getCollisionShape(level, p).isEmpty()) return true;
         }
         return false;
     }
 
-    /** 计算给定速度在"朝墙"方向上的归一化分量（-1 ~ 1）。 */
+    // ================================================================
+    //                          进入条件
+    // ================================================================
+
+    /**
+     * 玩家状态是否允许进入跑墙。
+     * <p>只检查"玩家自身"的条件——墙面和方向由调用方另行判定。
+     */
+    public static boolean canEnter(Player player) {
+        if (player.onGround()) return false;
+        if (hasGroundBelow(player)) return false;
+        if (player.isInWater() || player.isInLava()) return false;
+        if (player.isFallFlying()) return false;
+        if (player.isShiftKeyDown()) return false;
+        if (player.onClimbable()) return false;
+
+        Vec3 vel = player.getDeltaMovement();
+        double hSpeedSq = vel.x * vel.x + vel.z * vel.z;
+        double min = GhostrunnerConfig.WALL_MIN_ENTRY_H_SPEED;
+        return hSpeedSq >= min * min;
+    }
+
+    /**
+     * 速度在"朝墙"方向上的归一化分量（-1 ~ 1）。
+     * <p>水平速度接近 0 时返回 0。
+     */
     public static double getTowardWallComponent(Vec3 velocity, Direction wall) {
-        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-        if (hSpeed < 1e-6) return 0;
-        double nx = wall.getStepX();
-        double nz = wall.getStepZ();
-        return (velocity.x * nx + velocity.z * nz) / hSpeed;
+        double vx = velocity.x, vz = velocity.z;
+        double hSpeedSq = vx * vx + vz * vz;
+        if (hSpeedSq < GhostrunnerConfig.VEC_EPSILON_SQ) return 0;
+
+        double dot = vx * wall.getStepX() + vz * wall.getStepZ();
+        return dot / Math.sqrt(hSpeedSq);
     }
 
+    /** 玩家速度是否朝指定墙面。 */
     public static boolean isMovingTowardWall(Player player, Direction wall) {
-        return isMovingTowardWall(player, wall, MIN_ENTRY_TOWARD_WALL);
+        return getTowardWallComponent(player.getDeltaMovement(), wall)
+                >= GhostrunnerConfig.WALL_MIN_ENTRY_TOWARD;
     }
 
-    public static boolean isMovingTowardWall(Player player, Direction wall, double threshold) {
-        return getTowardWallComponent(player.getDeltaMovement(), wall) >= threshold;
-    }
-
+    /**
+     * 冲刺方向是否"斜撞"墙面。用于冲刺窗口的触发判定。
+     * <p>正撞（too direct）和擦过（too shallow）都不算。
+     */
     public static boolean isApproachingWallAtAngle(Vec3 dashDirection, Direction wall) {
         double toward = getTowardWallComponent(dashDirection, wall);
-        return toward >= DASH_WINDOW_TOWARD_MIN && toward <= DASH_WINDOW_TOWARD_MAX;
+        return toward >= GhostrunnerConfig.WALL_DASH_WINDOW_TOWARD_MIN
+                && toward <= GhostrunnerConfig.WALL_DASH_WINDOW_TOWARD_MAX;
     }
 
     // ================================================================
     //                          方向锁定
     // ================================================================
 
+    /**
+     * 计算跑墙的锁定方向（水平单位向量）。
+     * <p>算法：把视线投影到墙面平面上。视线和墙几乎平行时退化为速度投影。
+     *
+     * @return null 表示无法确定方向（视线和速度都在墙的法线方向上）
+     */
     public static Vec3 computeLockedDirection(Player player, Direction wall) {
         double nx = wall.getStepX();
         double nz = wall.getStepZ();
@@ -131,8 +172,8 @@ public final class WallRunHandler {
         double pz = look.z - dotL * nz;
         double lenSq = px * px + pz * pz;
 
-        // 2) 视线退化时，用速度投影
-        if (lenSq < 0.0001) {
+        // 2) 视线退化时用速度投影
+        if (lenSq < GhostrunnerConfig.AIM_EPSILON_SQ) {
             Vec3 vel = player.getDeltaMovement();
             double dotV = vel.x * nx + vel.z * nz;
             px = vel.x - dotV * nx;
@@ -140,31 +181,40 @@ public final class WallRunHandler {
             lenSq = px * px + pz * pz;
         }
 
-        if (lenSq < 0.0001) return null;
+        if (lenSq < GhostrunnerConfig.AIM_EPSILON_SQ) return null;
 
         double len = Math.sqrt(lenSq);
         return new Vec3(px / len, 0, pz / len);
     }
 
+    /**
+     * 从锁定方向算速度。纯水平，无重力补偿。
+     */
     public static Vec3 velocityFromLockedDirection(Vec3 lockedDirection) {
         return new Vec3(
-                lockedDirection.x * WALL_RUN_SPEED,
+                lockedDirection.x * GhostrunnerConfig.WALL_RUN_SPEED,
                 0.0,
-                lockedDirection.z * WALL_RUN_SPEED);
+                lockedDirection.z * GhostrunnerConfig.WALL_RUN_SPEED);
     }
 
     // ================================================================
     //                          跳出
     // ================================================================
 
+    /**
+     * 从墙上跳出。
+     * <p>水平方向沿墙面反方向给冲量，竖直给向上初速。
+     * <p>如果跳出方向有 2~3 格高的可攀爬目标，额外加一点上抬帮助翻越。
+     */
     public static void jumpOffWall(Player player, Direction wall) {
         Vec3 vel = player.getDeltaMovement();
-        double outX = -wall.getStepX() * JUMP_OUT_H;
-        double outZ = -wall.getStepZ() * JUMP_OUT_H;
+        double outX = -wall.getStepX() * GhostrunnerConfig.WALL_JUMP_OUT_H;
+        double outZ = -wall.getStepZ() * GhostrunnerConfig.WALL_JUMP_OUT_H;
 
+        // 跳出方向是否有可攀爬目标
         int dx = -wall.getStepX();
         int dz = -wall.getStepZ();
-        var climbTarget = ClimbHandler.findClimbTargetInDirection(player, dx, dz);
+        BlockPos climbTarget = ClimbHandler.findClimbTargetInDirection(player, dx, dz);
 
         double extraUp = 0.0;
         if (climbTarget != null) {
@@ -174,13 +224,10 @@ public final class WallRunHandler {
             }
         }
 
-        player.setDeltaMovement(vel.x + outX, JUMP_OUT_V + extraUp, vel.z + outZ);
-
-        // ★ 修正：26.3 无 hurtMarked，直接发包同步速度
-        if (player instanceof ServerPlayer sp) {
-            sp.connection.send(new ClientboundSetEntityMotionPacket(sp));
-        }
-
+        MotionSync.setAndSync(player,
+                vel.x + outX,
+                GhostrunnerConfig.WALL_JUMP_OUT_V + extraUp,
+                vel.z + outZ);
         player.fallDistance = 0;
     }
 }
