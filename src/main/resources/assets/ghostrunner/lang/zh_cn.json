@@ -1,8 +1,7 @@
 {
-  "itemGroup.ghostrunner.main": "幽灵行者",
   "item.ghostrunner.ghostrunner_tag": "改造器",
 
-  "category.ghostrunner": "幽灵行者",
+  "key.category.ghostrunner.general": "幽灵行者",
   "key.ghostrunner.respawn": "快速复活",
 
   "gui.ghostrunner.death_title": "致命失误！",

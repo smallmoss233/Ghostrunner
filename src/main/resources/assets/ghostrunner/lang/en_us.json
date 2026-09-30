@@ -1,8 +1,7 @@
 {
-  "itemGroup.ghostrunner.main": "Ghostrunner",
   "item.ghostrunner.ghostrunner_tag": "Modifier",
 
-  "category.ghostrunner": "Ghostrunner",
+  "key.category.ghostrunner.general": "Ghostrunner",
   "key.ghostrunner.respawn": "Quick Respawn",
 
   "gui.ghostrunner.death_title": "Fatal Error!",
